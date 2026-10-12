@@ -1,0 +1,36 @@
+name: delivery_courier
+description: Delivery — تطبيق الموصّل (نفس قاعدة بيانات الموقع وتطبيق الزبون)
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  firebase_core: any
+  firebase_auth: any
+  cloud_firestore: any
+  shared_preferences: any
+  google_fonts: any
+  geolocator: '>=12.0.0 <15.0.0'
+  url_launcher: any
+  audioplayers: any
+
+dev_dependencies:
+  flutter_launcher_icons: any
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: assets/icon.png
+  adaptive_icon_background: '#1D4E89'
+  adaptive_icon_foreground: assets/icon_fg.png
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/alert.wav
