@@ -11,12 +11,15 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'notify.dart';
+
 typedef Doc = Map<String, dynamic>;
 
 final CourierState app = CourierState();
 
 const loginDomain = 'delivery-dz.com';
 const offerMs = 60000; // مدة عرض الطلب على الموصّل قبل أن ينتقل للذي بعده
+const ringEveryMs = 6000; // يتكرر صوت العرض حتى يرد الموصّل
 const activeStatuses = ['new', 'prep', 'ready', 'road'];
 const jobStatuses = ['prep', 'ready', 'road'];
 const closedStatuses = ['cancelled', 'rejected'];
@@ -158,6 +161,8 @@ class CourierState extends ChangeNotifier {
   Timer? _tick; // ignore: unused_field
   bool _selfCheckBusy = false;
   bool _hadOffer = false;
+  int _lastRing = 0;
+  String? _ringingFor; // رقم الطلب الذي يرنّ عرضه الآن
   void Function(String msg)? onToast;
 
   void toast(String m) => onToast?.call(m);
@@ -249,6 +254,7 @@ class CourierState extends ChangeNotifier {
   }
 
   void _startCourier(String uid) {
+    notify.requestPermission();
     _subs.add(fs.collection('shops').snapshots().listen((s) {
       shops = {for (final d in s.docs) d.id: _doc(d)};
       notifyListeners();
@@ -286,6 +292,7 @@ class CourierState extends ChangeNotifier {
         if (!first && prev != null && n > prev && o['lastMsgBy'] == 'customer' && openChatId != id) {
           alert(1);
           toast('رسالة من الزبون: ${o['lastMsgText'] ?? 'رسالة جديدة'}');
+          notify.message(id, 'رسالة من الزبون · طلب ${o['no'] ?? ''}', '${o['lastMsgText'] ?? 'رسالة جديدة'}');
         }
         final st = '${o['status'] ?? ''}', was = _statusSeen[id];
         _statusSeen[id] = st;
@@ -293,6 +300,7 @@ class CourierState extends ChangeNotifier {
           if (closedStatuses.contains(st)) {
             alert(2);
             toast('أُلغي الطلب رقم ${o['no'] ?? ''}. لا تشترِ ولا تسلّم شيئاً.');
+            notify.update('cancel:$id', 'أُلغي الطلب رقم ${o['no'] ?? ''}', 'لا تشترِ ولا تسلّم شيئاً.', 'job:$id');
           } else if (st == 'done' && !_doneByMe.remove(id)) {
             toast('سجّل الزبون استلام الطلب رقم ${o['no'] ?? ''} · أُضيف إلى حصيلتك');
           }
@@ -315,6 +323,7 @@ class CourierState extends ChangeNotifier {
         if (added) {
           alert(2);
           toast('طلب «اشترِ لي» جديد ينتظر موصّلاً');
+          notify.update('pool', 'طلب «اشترِ لي» جديد', 'افتح التطبيق لترى الطلب وتقبله قبل غيرك.', 'home');
         }
       }
       firstPool = false;
@@ -328,11 +337,23 @@ class CourierState extends ChangeNotifier {
         final o = c.doc.data();
         if (c.type != DocumentChangeType.removed && o != null && o['offerTo'] == uid && o['courierUid'] == null) {
           final x = _doc(c.doc);
-          _offerSeen[_offerKey(x)] = nowMs();
+          final k = _offerKey(x);
+          if (_offerSeen.containsKey(k)) continue; // تحديث لنفس العرض: لا نعيد العدّ ولا التنبيه
+          _offerSeen[k] = nowMs();
           got = true;
+          final d = km(lat ?? asD(me?['lat']), lng ?? asD(me?['lng']), asD(shop(x['shopId'])?['lat']), asD(shop(x['shopId'])?['lng']));
+          notify.offer(
+            x['id'],
+            'طلب جديد قريب منك · ربحك ${money(keeps(x))}',
+            '${x['shopName'] ?? ''}${d == null ? '' : ' (${kmText(d)})'} ← ${x['zoneName'] ?? ''}. اضغط لتقبل أو ترفض.',
+            const Duration(milliseconds: offerMs),
+          );
         }
       }
-      if (got) alert(3);
+      if (got) {
+        _lastRing = nowMs();
+        alert(3);
+      }
       notifyListeners();
     }, onError: (_) {}));
   }
@@ -449,9 +470,17 @@ class CourierState extends ChangeNotifier {
   int _tickN = 0;
   void _onTick() {
     _tickN++;
-    final has = currentOffer != null;
+    final cur = currentOffer;
+    final has = cur != null;
     if (has || _hadOffer) notifyListeners();
     _hadOffer = has;
+    final curId = cur?['id'] as String?;
+    if (_ringingFor != null && _ringingFor != curId) notify.cancelOffer(_ringingFor!);
+    _ringingFor = curId;
+    if (has && nowMs() - _lastRing >= ringEveryMs) {
+      _lastRing = nowMs();
+      alert(1);
+    }
     if (_tickN % 4 == 0) _selfCheck();
   }
 

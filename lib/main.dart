@@ -5,6 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'notify.dart';
+import 'screens/chat.dart';
+import 'screens/job.dart';
 import 'screens/login.dart';
 import 'screens/offer.dart';
 import 'screens/shell.dart';
@@ -33,8 +36,26 @@ Future<void> main() async {
     s.hideCurrentSnackBar();
     s.showSnackBar(SnackBar(content: Text(m), behavior: SnackBarBehavior.floating));
   };
+  notify.onOpen = _openFromNotification;
+  await notify.init();
   await app.init();
   runApp(const CourierApp());
+}
+
+// الضغط على إشعار يفتح الصفحة المعنية (نافذة العرض تظهر وحدها فوق كل الصفحات)
+void _openFromNotification(String payload) {
+  final nav = navKey.currentState;
+  if (nav == null || app.role != 'courier') return;
+  final i = payload.indexOf(':');
+  final kind = i < 0 ? payload : payload.substring(0, i);
+  final id = i < 0 ? '' : payload.substring(i + 1);
+  nav.popUntil((r) => r.isFirst);
+  if (kind == 'chat' && id.isNotEmpty) {
+    nav.push(MaterialPageRoute(builder: (_) => JobScreen(orderId: id)));
+    nav.push(MaterialPageRoute(builder: (_) => ChatScreen(orderId: id)));
+  } else if (kind == 'job' && id.isNotEmpty) {
+    nav.push(MaterialPageRoute(builder: (_) => JobScreen(orderId: id)));
+  }
 }
 
 ThemeData buildTheme(Brightness b) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../notify.dart';
 import '../store.dart';
 import '../ui.dart';
 import 'home.dart';
@@ -14,7 +15,7 @@ class AccountScreen extends StatefulWidget {
 }
 
 class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserver {
-  bool? gpsOn;
+  bool? gpsOn, notifOn;
   LocationPermission? perm;
   bool testing = false;
 
@@ -41,10 +42,12 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
     try {
       final on = await Geolocator.isLocationServiceEnabled();
       final p = await Geolocator.checkPermission();
+      final n = await notify.enabled();
       if (mounted) {
         setState(() {
           gpsOn = on;
           perm = p;
+          notifOn = n ?? true;
         });
       }
     } catch (_) {}
@@ -60,6 +63,12 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
     } catch (_) {}
     await _check();
     if (app.online) app.startTracking();
+  }
+
+  Future<void> _askNotif() async {
+    final ok = await notify.requestPermission();
+    if (!ok) await Geolocator.openAppSettings();
+    await _check();
   }
 
   Future<void> _testSound() async {
@@ -131,6 +140,15 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
                     onAction: _askLocation,
                   ),
                   const Divider(height: 20),
+                  _CheckRow(
+                    ok: notifOn,
+                    title: 'الإشعارات',
+                    okText: 'مسموحة · تصلك العروض والشاشة مطفأة',
+                    badText: 'ممنوعة · لن تعرف بالطلبات والتطبيق في الخلفية',
+                    action: notifOn == false ? 'السماح' : null,
+                    onAction: _askNotif,
+                  ),
+                  const Divider(height: 20),
                   Row(children: [
                     Icon(Icons.volume_up_rounded, color: hint),
                     const SizedBox(width: 10),
@@ -152,7 +170,7 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
                 child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   Text('لتصلك الطلبات والشاشة مطفأة', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 8),
-                  const _Tip('اسمح للتطبيق بالإشعارات، فإشعار «أنت متصل» هو ما يبقيه شغالاً.'),
+                  const _Tip('أبقِ إشعار «أنت متصل» ظاهراً، فهو ما يبقي التطبيق شغالاً.'),
                   const _Tip('في إعدادات البطارية اختر «بدون قيود» أو «غير محسّن» لتطبيق Delivery موصّل.'),
                   const _Tip('لا تغلق التطبيق من قائمة التطبيقات المفتوحة وأنت متصل.'),
                   const SizedBox(height: 8),
