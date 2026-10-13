@@ -37,21 +37,29 @@ jobs:
       - name: App icon
         run: dart run flutter_launcher_icons
 
+      # ملف لكل نوع معالج بدل ملف واحد ضخم (81 ميغا) كان التحميل ينقطع قبل اكتماله
       - name: Build APK
-        run: flutter build apk --release
+        run: flutter build apk --release --split-per-abi --target-platform android-arm64,android-arm
 
       - name: Rename APK
-        run: cp build/app/outputs/flutter-apk/app-release.apk Courier-${{ github.run_number }}.apk
+        run: |
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk Courier-${{ github.run_number }}.apk
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk Courier-${{ github.run_number }}-old-phones.apk
+          ls -lh Courier-*.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: Courier-apk
-          path: Courier-${{ github.run_number }}.apk
+          path: Courier-*.apk
 
       - name: Publish to Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           name: الموصّل — نسخة ${{ github.run_number }}
-          body: نزّل ملف Courier-${{ github.run_number }}.apk على هاتفك وثبّته.
-          files: Courier-${{ github.run_number }}.apk
+          body: |
+            نزّل ملف Courier-${{ github.run_number }}.apk على هاتفك وثبّته.
+            إذا قال الهاتف إن التطبيق غير متوافق (هاتف قديم)، نزّل Courier-${{ github.run_number }}-old-phones.apk بدله.
+          files: |
+            Courier-${{ github.run_number }}.apk
+            Courier-${{ github.run_number }}-old-phones.apk
