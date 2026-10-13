@@ -119,9 +119,12 @@ class _JobScreenState extends State<JobScreen> {
             icon: const Icon(Icons.check_circle_rounded),
             label: Text('سلّمت الطلب وحصّلت ${money(asInt(o['total']))}'),
           );
-        } else {
+        } else if (st == 'done') {
           action = Note('تم التسليم ${clock(app.doneAt(o))} · ${money(asInt(o['total']))}',
               color: brand, icon: Icons.check_circle_rounded);
+        } else {
+          action = Note('أُلغي هذا الطلب. لا تشترِ ولا تسلّم شيئاً، ولا تحصّل أي مبلغ.',
+              color: Colors.red.shade700, icon: Icons.cancel_rounded);
         }
 
         final pickupActive = st == 'prep' || st == 'ready';

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../store.dart';
+import 'account.dart';
 import 'earn.dart';
+import 'history.dart';
 import 'home.dart';
 
 class Shell extends StatefulWidget {
@@ -20,7 +22,7 @@ class _ShellState extends State<Shell> {
       builder: (context, _) {
         final n = app.active.length;
         return Scaffold(
-            body: IndexedStack(index: tab, children: const [HomeScreen(), EarnScreen()]),
+            body: IndexedStack(index: tab, children: const [HomeScreen(), EarnScreen(), HistoryScreen(), AccountScreen()]),
             bottomNavigationBar: NavigationBar(
               selectedIndex: tab,
               onDestinationSelected: (i) => setState(() => tab = i),
@@ -34,6 +36,16 @@ class _ShellState extends State<Shell> {
                   icon: Icon(Icons.account_balance_wallet_outlined),
                   selectedIcon: Icon(Icons.account_balance_wallet_rounded),
                   label: 'حصيلتي',
+                ),
+                const NavigationDestination(
+                  icon: Icon(Icons.history_outlined),
+                  selectedIcon: Icon(Icons.history_rounded),
+                  label: 'السجل',
+                ),
+                const NavigationDestination(
+                  icon: Icon(Icons.person_outline_rounded),
+                  selectedIcon: Icon(Icons.person_rounded),
+                  label: 'حسابي',
                 ),
               ],
             ),

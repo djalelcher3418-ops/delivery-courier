@@ -19,6 +19,8 @@ const loginDomain = 'delivery-dz.com';
 const offerMs = 60000; // مدة عرض الطلب على الموصّل قبل أن ينتقل للذي بعده
 const activeStatuses = ['new', 'prep', 'ready', 'road'];
 const jobStatuses = ['prep', 'ready', 'road'];
+const closedStatuses = ['cancelled', 'rejected'];
+const historyDays = 30; // كم يوماً يظهر في السجل
 
 int asInt(dynamic v) => v is num ? v.toInt() : (int.tryParse('$v') ?? 0);
 double? asD(dynamic v) => v is num ? v.toDouble() : null;
@@ -57,6 +59,15 @@ String fmt(num n) {
 }
 
 String money(num n) => '${fmt(n)} دج';
+
+/// عدد التوصيلات بصيغة عربية سليمة
+String deliveries(int n) {
+  if (n == 0) return 'لا توصيلات';
+  if (n == 1) return 'توصيلة واحدة';
+  if (n == 2) return 'توصيلتان';
+  if (n <= 10) return '$n توصيلات';
+  return '$n توصيلة';
+}
 String two(int n) => n.toString().padLeft(2, '0');
 String clock(int ms) {
   final d = DateTime.fromMillisecondsSinceEpoch(ms);
@@ -138,11 +149,13 @@ class CourierState extends ChangeNotifier {
 
   final Map<String, int> _offerSeen = {};
   final Map<String, int> _msgSeenN = {};
+  final Map<String, String> _statusSeen = {};
+  final Set<String> _doneByMe = {};
   Map<String, int> seen = {};
   String? openChatId;
 
   final List<StreamSubscription> _subs = [];
-  Timer? _tick;
+  Timer? _tick; // ignore: unused_field
   bool _selfCheckBusy = false;
   bool _hadOffer = false;
   void Function(String msg)? onToast;
@@ -274,6 +287,16 @@ class CourierState extends ChangeNotifier {
           alert(1);
           toast('رسالة من الزبون: ${o['lastMsgText'] ?? 'رسالة جديدة'}');
         }
+        final st = '${o['status'] ?? ''}', was = _statusSeen[id];
+        _statusSeen[id] = st;
+        if (!first && was != null && was != st && jobStatuses.contains(was)) {
+          if (closedStatuses.contains(st)) {
+            alert(2);
+            toast('أُلغي الطلب رقم ${o['no'] ?? ''}. لا تشترِ ولا تسلّم شيئاً.');
+          } else if (st == 'done' && !_doneByMe.remove(id)) {
+            toast('سجّل الزبون استلام الطلب رقم ${o['no'] ?? ''} · أُضيف إلى حصيلتك');
+          }
+        }
       }
       first = false;
       notifyListeners();
@@ -343,6 +366,34 @@ class CourierState extends ChangeNotifier {
   List<Doc> get doneToday {
     final t0 = startOfToday();
     return sorted.where((o) => o['status'] == 'done' && doneAt(o) >= t0).toList();
+  }
+
+  /// التوصيلات المكتملة في آخر [historyDays] يوماً، الأحدث أولاً
+  List<Doc> get history {
+    final t0 = startOfToday() - (historyDays - 1) * 86400000;
+    return orders.where((o) => o['status'] == 'done' && doneAt(o) >= t0).toList()
+      ..sort((a, b) => doneAt(b).compareTo(doneAt(a)));
+  }
+
+  /// ربح كل يوم من آخر [n] أيام، من الأقدم إلى اليوم
+  List<({DateTime day, int earned, int count})> lastDays(int n) {
+    final now = DateTime.now();
+    final days = [for (int i = n - 1; i >= 0; i--) DateTime(now.year, now.month, now.day - i)];
+    final earned = List.filled(n, 0), count = List.filled(n, 0);
+    for (final o in orders) {
+      if (o['status'] != 'done') continue;
+      final d = DateTime.fromMillisecondsSinceEpoch(doneAt(o));
+      final i = days.indexWhere((x) => x.year == d.year && x.month == d.month && x.day == d.day);
+      if (i < 0) continue;
+      earned[i] += keeps(o);
+      count[i]++;
+    }
+    return [for (int i = 0; i < n; i++) (day: days[i], earned: earned[i], count: count[i])];
+  }
+
+  double? get rating {
+    final n = asInt(me?['ratingCount']);
+    return n > 0 ? asInt(me?['ratingSum']) / n : null;
   }
 
   List<Doc> get unsettled => orders.where((o) => o['status'] == 'done' && o['settled'] == false).toList();
@@ -614,7 +665,12 @@ class CourierState extends ChangeNotifier {
   }
 
   Future<bool> pick(String id) => setStatus(id, 'road', 'في الطريق إلى الزبون', {'pickedAt': nowMs()});
-  Future<bool> done(String id) => setStatus(id, 'done', 'سُجّل التسليم · أُضيف المبلغ إلى حصيلتك', {'doneAt': nowMs()});
+  Future<bool> done(String id) async {
+    _doneByMe.add(id);
+    final ok = await setStatus(id, 'done', 'سُجّل التسليم · أُضيف المبلغ إلى حصيلتك', {'doneAt': nowMs()});
+    if (!ok) _doneByMe.remove(id);
+    return ok;
+  }
 
   /// يرجع رسالة خطأ أو '' إذا نجح
   Future<String> paid(Doc o, String amtText) async {
