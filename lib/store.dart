@@ -380,6 +380,21 @@ class CourierState extends ChangeNotifier {
     return null;
   }
 
+  /// كم دقيقة بقيت على جاهزية طلب المحل (سالب = تأخر المحل). null إذا لم يبدأ التحضير.
+  int? prepLeft(Doc o) {
+    if (isAny(o) || o['status'] != 'prep' || o['prepAt'] == null) return null;
+    final s = shop(o['shopId']);
+    final prep = s != null && asInt(s['prepMin']) > 0 ? asInt(s['prepMin']) : 15;
+    return ((asInt(o['prepAt']) + prep * 60000 - nowMs()) / 60000).ceil();
+  }
+
+  String prepText(Doc o) {
+    final l = prepLeft(o);
+    if (l == null) return '';
+    if (l > 0) return 'يجهز في المحل خلال ~$l د';
+    return 'كان يُفترض أن يجهز الآن · قد تنتظر قليلاً';
+  }
+
   int doneAt(Doc o) => o['doneAt'] != null ? asInt(o['doneAt']) : asInt(o['createdAtMs']);
 
   List<Doc> get sorted => [...orders]..sort((a, b) => asInt(b['createdAtMs']).compareTo(asInt(a['createdAtMs'])));
@@ -472,7 +487,9 @@ class CourierState extends ChangeNotifier {
     _tickN++;
     final cur = currentOffer;
     final has = cur != null;
-    if (has || _hadOffer) notifyListeners();
+    // يحدّث «يجهز خلال ~X د» كل 30 ثانية ما دام عندي طلب قيد التحضير
+    final prepTick = _tickN % 30 == 0 && orders.any((o) => o['status'] == 'prep');
+    if (has || _hadOffer || prepTick) notifyListeners();
     _hadOffer = has;
     final curId = cur?['id'] as String?;
     if (_ringingFor != null && _ringingFor != curId) notify.cancelOffer(_ringingFor!);

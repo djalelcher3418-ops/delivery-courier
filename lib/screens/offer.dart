@@ -67,6 +67,7 @@ class _OfferOverlayState extends State<OfferOverlay> {
               Text('${o['shopName'] ?? ''}', style: theme.textTheme.titleLarge),
               if (d != null) Text('المحل على بعد ${kmText(d)} منك', style: TextStyle(color: theme.hintColor)),
               const SizedBox(height: 6),
+              if (app.prepText(o).isNotEmpty) Text(app.prepText(o), style: TextStyle(color: theme.hintColor)),
               Text('التسليم إلى ${o['zoneName'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w600)),
               Text(itemsText(o), style: TextStyle(color: theme.hintColor), maxLines: 3, overflow: TextOverflow.ellipsis),
               const Divider(height: 22),

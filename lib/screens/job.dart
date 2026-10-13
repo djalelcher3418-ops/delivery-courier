@@ -138,7 +138,12 @@ class _JobScreenState extends State<JobScreen> {
             toolbarHeight: 70,
           ),
           body: ListView(padding: const EdgeInsets.fromLTRB(16, 6, 16, 120), children: [
-            if (st == 'prep' && !any) const Note('المحل يحضّر الطلب. اذهب إليه الآن.', color: warn, icon: Icons.storefront_rounded),
+            if (st == 'prep' && !any)
+              Note(
+                app.prepText(o).isEmpty ? 'المحل يحضّر الطلب. اذهب إليه الآن.' : 'المحل يحضّر الطلب. ${app.prepText(o)}.',
+                color: warn,
+                icon: Icons.storefront_rounded,
+              ),
             if (st == 'ready') const Note('الطلب جاهز في المحل، استلمه الآن.', color: brand, icon: Icons.task_alt_rounded),
             if (st == 'prep' && any)
               const Note('اشترِ الطلب واحتفظ بالوصل أو صوّره، ثم اكتب المبلغ الذي دفعته بالضبط.',
