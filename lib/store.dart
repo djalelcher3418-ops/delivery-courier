@@ -560,9 +560,9 @@ class CourierState extends ChangeNotifier {
         final moved = (lat == null) || (km(lat, lng, p.latitude, p.longitude) ?? 1) > 0.1;
         lat = double.parse(p.latitude.toStringAsFixed(6));
         lng = double.parse(p.longitude.toStringAsFixed(6));
-        if (geoErr.isNotEmpty) {
+        if (geoErr.isNotEmpty || moved) {
           geoErr = '';
-          notifyListeners();
+          notifyListeners(); // تحدّث المسافات المعروضة (مثل «أنت قريب من الزبون»)
         }
         pushLocation(moved);
       }, onError: (e) {

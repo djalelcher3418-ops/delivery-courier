@@ -13,6 +13,18 @@ class JobScreen extends StatefulWidget {
 
 class _JobScreenState extends State<JobScreen> {
   bool busy = false;
+  final Set<String> _toldArrived = {};
+
+  Future<void> _tellArrived(String id) async {
+    setState(() => _toldArrived.add(id));
+    try {
+      await app.sendMsg(id, 'وصلت، أنا أمام العنوان');
+      app.toast('أُبلغ الزبون أنك وصلت');
+    } catch (e) {
+      setState(() => _toldArrived.remove(id));
+      app.toast(errText(e));
+    }
+  }
 
   Future<void> _run(Future<bool> Function() f, {bool back = false}) async {
     setState(() => busy = true);
@@ -82,6 +94,8 @@ class _JobScreenState extends State<JobScreen> {
         final s = app.shop(o['shopId']);
         final hint = Theme.of(context).hintColor;
         final cLat = asD(o['custLat']), cLng = asD(o['custLng']);
+        final toCust = km(app.lat, app.lng, cLat, cLng);
+        final atCustomer = toCust != null && toCust <= 0.2;
         final sLat = asD(s?['lat']), sLng = asD(s?['lng']);
         final from = '${o['anyFrom'] ?? ''}';
 
@@ -138,6 +152,22 @@ class _JobScreenState extends State<JobScreen> {
             toolbarHeight: 70,
           ),
           body: ListView(padding: const EdgeInsets.fromLTRB(16, 6, 16, 120), children: [
+            if (st == 'road' && atCustomer && !_toldArrived.contains(o['id'])) ...[
+              Box(
+                color: info.withValues(alpha: 0.10),
+                child: Row(children: [
+                  const Icon(Icons.where_to_vote_rounded, color: info),
+                  const SizedBox(width: 10),
+                  const Expanded(child: Text('أنت قريب من عنوان الزبون.', style: TextStyle(fontWeight: FontWeight.w600))),
+                  FilledButton(
+                    style: FilledButton.styleFrom(minimumSize: const Size(0, 40), backgroundColor: info),
+                    onPressed: () => _tellArrived(o['id']),
+                    child: const Text('أبلغه أنني وصلت'),
+                  ),
+                ]),
+              ),
+              const SizedBox(height: 12),
+            ],
             if (st == 'prep' && !any)
               Note(
                 app.prepText(o).isEmpty ? 'المحل يحضّر الطلب. اذهب إليه الآن.' : 'المحل يحضّر الطلب. ${app.prepText(o)}.',
