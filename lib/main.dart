@@ -11,6 +11,7 @@ import 'screens/job.dart';
 import 'screens/login.dart';
 import 'screens/offer.dart';
 import 'screens/shell.dart';
+import 'status_bar.dart';
 import 'store.dart';
 import 'ui.dart';
 
@@ -30,6 +31,7 @@ final navKey = GlobalKey<NavigatorState>();
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: firebaseOptions);
+  status.start();
   app.onToast = (m) {
     final s = messengerKey.currentState;
     if (s == null) return;
@@ -114,7 +116,7 @@ class CourierApp extends StatelessWidget {
         builder: (context, _) {
           final offer = app.role == 'courier' ? app.currentOffer : null;
           return Stack(children: [
-            child ?? const SizedBox.shrink(),
+            StatusBars(child: child ?? const SizedBox.shrink()),
             if (offer != null) OfferOverlay(offer: offer, navKey: navKey),
           ]);
         },

@@ -39,7 +39,7 @@ jobs:
 
       # ملف واحد يعمل على كل الهواتف
       - name: Build APK
-        run: flutter build apk --release
+        run: flutter build apk --release --dart-define=BUILD=${{ github.run_number }}
 
       - name: Rename APK
         run: cp build/app/outputs/flutter-apk/app-release.apk Courier-${{ github.run_number }}.apk
