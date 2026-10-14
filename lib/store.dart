@@ -619,6 +619,18 @@ class CourierState extends ChangeNotifier {
     }
   }
 
+
+  /// آراء الزبائن (مجموعة reviews التي يكتبها تطبيق الزبون بعد كل طلب)، الأحدث أولاً
+  Future<List<Doc>> loadReviews() async {
+    final s = await fs.collection('reviews').where('courierUid', isEqualTo: user!.uid).limit(120).get();
+    final l = s.docs.map((d) => <String, dynamic>{...d.data(), 'id': d.id}).where((r) => asInt(r['courier']) > 0).toList();
+    for (final r in l) {
+      r['createdAtMs'] = msOf(r['createdAt']);
+    }
+    l.sort((a, b) => asInt(b['createdAtMs']).compareTo(asInt(a['createdAtMs'])));
+    return l.take(60).toList();
+  }
+
   // ---------------- actions ----------------
   Future<void> toggleOnline() async {
     final c = me;

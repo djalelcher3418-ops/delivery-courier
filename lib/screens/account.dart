@@ -5,6 +5,7 @@ import '../notify.dart';
 import '../store.dart';
 import '../ui.dart';
 import 'home.dart';
+import 'reviews.dart';
 
 const _good = Color(0xFF0A7D55);
 
@@ -102,6 +103,15 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Box(
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => ReviewsScreen(
+                    title: 'آراء الزبائن فيك',
+                    load: app.loadReviews,
+                    starKey: 'courier',
+                    barLight: const Color(0xFF2B66AE),
+                    barDark: const Color(0xFF5F95DA),
+                  ),
+                )),
                 child: Row(children: [
                   const Icon(Icons.star_rounded, color: star, size: 36),
                   const SizedBox(width: 10),
@@ -109,10 +119,11 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(r == null ? 'لا تقييم بعد' : '${r.toStringAsFixed(1)} من 5',
                           style: theme.textTheme.titleMedium),
-                      Text(r == null ? 'يقيّمك الزبائن بعد كل توصيلة.' : 'من $rc تقييم عند الزبائن',
+                      Text(r == null ? 'يقيّمك الزبائن بعد كل توصيلة.' : 'من $rc تقييم عند الزبائن · اقرأ تعليقاتهم',
                           style: TextStyle(color: hint, fontSize: 13)),
                     ]),
                   ),
+                  const Icon(Icons.chevron_left_rounded),
                 ]),
               ),
               const SizedBox(height: 18),
