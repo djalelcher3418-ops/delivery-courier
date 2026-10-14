@@ -31,6 +31,8 @@ final navKey = GlobalKey<NavigatorState>();
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: firebaseOptions);
+  status.watch = app;
+  status.batteryRelevant = () => app.online;
   status.start();
   app.onToast = (m) {
     final s = messengerKey.currentState;
