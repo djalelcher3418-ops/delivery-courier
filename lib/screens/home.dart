@@ -86,7 +86,7 @@ class HomeScreen extends StatelessWidget {
               child: Switch(
                 value: on,
                 activeThumbColor: Colors.white,
-                activeTrackColor: const Color(0xFF3DBB8C),
+                activeTrackColor: ink,
                 onChanged: block.isNotEmpty ? null : (_) => app.toggleOnline(),
               ),
             ),

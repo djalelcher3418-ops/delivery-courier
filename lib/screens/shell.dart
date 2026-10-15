@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../store.dart';
+import '../ui.dart';
 import 'account.dart';
 import 'earn.dart';
 import 'history.dart';
@@ -23,30 +24,14 @@ class _ShellState extends State<Shell> {
         final n = app.active.length;
         return Scaffold(
             body: IndexedStack(index: tab, children: const [HomeScreen(), EarnScreen(), HistoryScreen(), AccountScreen()]),
-            bottomNavigationBar: NavigationBar(
-              selectedIndex: tab,
-              onDestinationSelected: (i) => setState(() => tab = i),
-              destinations: [
-                NavigationDestination(
-                  icon: Badge(isLabelVisible: n > 0, label: Text('$n'), child: const Icon(Icons.delivery_dining_outlined)),
-                  selectedIcon: Badge(isLabelVisible: n > 0, label: Text('$n'), child: const Icon(Icons.delivery_dining_rounded)),
-                  label: 'الطلبات',
-                ),
-                const NavigationDestination(
-                  icon: Icon(Icons.account_balance_wallet_outlined),
-                  selectedIcon: Icon(Icons.account_balance_wallet_rounded),
-                  label: 'حصيلتي',
-                ),
-                const NavigationDestination(
-                  icon: Icon(Icons.history_outlined),
-                  selectedIcon: Icon(Icons.history_rounded),
-                  label: 'السجل',
-                ),
-                const NavigationDestination(
-                  icon: Icon(Icons.person_outline_rounded),
-                  selectedIcon: Icon(Icons.person_rounded),
-                  label: 'حسابي',
-                ),
+            bottomNavigationBar: BottomBar(
+              index: tab,
+              onTap: (i) => setState(() => tab = i),
+              items: [
+                BarItem(Icons.delivery_dining_outlined, Icons.delivery_dining_rounded, 'الطلبات', badge: n > 0 ? '$n' : null),
+                const BarItem(Icons.account_balance_wallet_outlined, Icons.account_balance_wallet_rounded, 'حصيلتي'),
+                const BarItem(Icons.history_outlined, Icons.history_rounded, 'السجل'),
+                const BarItem(Icons.person_outline_rounded, Icons.person_rounded, 'حسابي'),
               ],
             ),
           );
