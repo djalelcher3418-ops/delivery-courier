@@ -181,7 +181,7 @@ class _JobScreenState extends State<JobScreen> {
               border: pickupActive ? Border.all(color: accentOf(context), width: 2) : null,
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 Row(children: [
-                  StepStar('١', active: pickupActive),
+                  StepStar('1', active: pickupActive),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -246,7 +246,7 @@ class _JobScreenState extends State<JobScreen> {
               border: st == 'road' ? Border.all(color: accentOf(context), width: 2) : null,
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 Row(children: [
-                  StepStar('٢', active: st == 'road'),
+                  StepStar('2', active: st == 'road'),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
