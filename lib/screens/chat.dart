@@ -95,7 +95,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       margin: const EdgeInsets.symmetric(vertical: 4),
                       padding: const EdgeInsets.fromLTRB(13, 9, 13, 7),
                       decoration: BoxDecoration(
-                        color: mine ? info : Theme.of(context).colorScheme.surface,
+                        color: mine ? (isDark(context) ? const Color(0xFF2E4482) : brand) : Theme.of(context).colorScheme.surface,
                         borderRadius: BorderRadiusDirectional.only(
                           topStart: const Radius.circular(16),
                           topEnd: const Radius.circular(16),
@@ -144,13 +144,23 @@ class _ChatScreenState extends State<ChatScreen> {
                     onSubmitted: _send,
                     decoration: InputDecoration(
                       hintText: 'اكتب رسالة…',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide(color: Theme.of(context).dividerColor)),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Theme.of(context).colorScheme.outlineVariant)),
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
-                IconButton.filled(tooltip: 'إرسال', onPressed: () => _send(input.text), icon: const Icon(Icons.send_rounded)),
+                IconButton(
+                  tooltip: 'إرسال',
+                  onPressed: () => _send(input.text),
+                  style: IconButton.styleFrom(
+                    backgroundColor: isDark(context) ? const Color(0xFF2E4482) : brand,
+                    foregroundColor: Colors.white,
+                    fixedSize: const Size(50, 50),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  icon: const Icon(Icons.send_rounded),
+                ),
               ]),
             ),
           ),

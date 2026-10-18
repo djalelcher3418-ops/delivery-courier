@@ -51,7 +51,7 @@ class HistoryScreen extends StatelessWidget {
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Box(child: WeekChart(days: week)),
               const SizedBox(height: 18),
-              Text('توصيلاتي في آخر $historyDays يوماً', style: Theme.of(context).textTheme.titleMedium),
+              SectionTitle('توصيلاتي في آخر $historyDays يوماً'),
               const SizedBox(height: 8),
               if (!app.loadedOrders)
                 const Padding(padding: EdgeInsets.all(30), child: Center(child: CircularProgressIndicator()))
@@ -69,8 +69,10 @@ class HistoryScreen extends StatelessWidget {
                       Expanded(
                         child: Text(dayTitle(e.key), style: const TextStyle(fontWeight: FontWeight.w700)),
                       ),
-                      Text('${deliveries(e.value.length)} · ${money(e.value.fold<int>(0, (s, o) => s + app.keeps(o)))}',
-                          style: TextStyle(color: hint, fontSize: 13)),
+                      Text(deliveries(e.value.length), style: TextStyle(color: hint, fontSize: 13)),
+                      const SizedBox(width: 10),
+                      Text('+${money(e.value.fold<int>(0, (s, o) => s + app.keeps(o)))}',
+                          style: TextStyle(color: teaOf(context), fontSize: 13, fontWeight: FontWeight.w700)),
                     ]),
                   ),
                   for (final o in e.value) _HistoryRow(o: o),
@@ -89,7 +91,6 @@ class _HistoryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hint = Theme.of(context).hintColor;
     final stars = o['stars'] is Map ? asInt((o['stars'] as Map)['courier']) : 0;
     final settled = o['settled'] != false;
     final from = isAny(o) ? 'اشترِ لي' : '${o['shopName'] ?? ''}';
@@ -102,19 +103,22 @@ class _HistoryRow extends StatelessWidget {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('$from ← ${o['zoneName'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w600)),
               const SizedBox(height: 2),
-              Text('${clock(app.doneAt(o))} · طلب ${o['no'] ?? ''} · حصّلت ${money(asInt(o['total']))}',
-                  style: TextStyle(color: hint, fontSize: 12)),
+              Wrap(spacing: 12, runSpacing: 2, children: [
+                Meta(Icons.schedule_rounded, clock(app.doneAt(o))),
+                Meta(Icons.receipt_outlined, 'طلب ${o['no'] ?? ''}'),
+                Meta(Icons.payments_outlined, 'حصّلت ${money(asInt(o['total']))}'),
+              ]),
               const SizedBox(height: 6),
               Wrap(spacing: 6, runSpacing: 4, children: [
                 settled
-                    ? const Pill('سُوّي الحساب', bg: Color(0xFFE2F1EA), fg: Color(0xFF0A5A41), icon: Icons.check_rounded)
-                    : const Pill('لم يُسوَّ بعد', bg: Color(0xFFFFF1DC), fg: Color(0xFF8A4B00), icon: Icons.schedule_rounded),
-                if (stars > 0) Pill('$stars من 5', icon: Icons.star_rounded),
+                    ? const Pill('سُوّي الحساب', bg: teaSoft, fg: teaDark, icon: Icons.check_rounded)
+                    : const Pill('لم يُسوَّ بعد', bg: saffronSoft, fg: saffronText, icon: Icons.schedule_rounded),
+                if (stars > 0) Pill('$stars من 5', bg: saffronSoft, fg: saffronText, icon: Icons.star_rounded),
               ]),
             ]),
           ),
           const SizedBox(width: 8),
-          Text('+${money(app.keeps(o))}', style: const TextStyle(fontWeight: FontWeight.w800)),
+          Text('+${money(app.keeps(o))}', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: teaOf(context))),
         ]),
       ),
     );
@@ -145,9 +149,9 @@ class _WeekChartState extends State<WeekChart> {
     const plotH = 110.0;
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Text('ربحك في آخر 7 أيام', style: theme.textTheme.titleMedium),
+      const SectionTitle('ربحك في آخر 7 أيام'),
       const SizedBox(height: 2),
-      Text('${dayTitle(d.day)}: ${money(d.earned)} · ${deliveries(d.count)}',
+      Text('${dayTitle(d.day)}: ${money(d.earned)}، ${deliveries(d.count)}',
           style: TextStyle(color: hint, fontSize: 13)),
       const SizedBox(height: 14),
       SizedBox(

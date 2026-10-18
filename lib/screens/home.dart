@@ -4,6 +4,7 @@ import '../store.dart';
 import '../ui.dart';
 import 'job.dart';
 
+/// رأس الصفحات: نيلي بنقش الزليج، واسم الموصّل بخط العناوين
 class TopHero extends StatelessWidget {
   final String sub;
   final List<Widget> children;
@@ -13,35 +14,40 @@ class TopHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = app.me ?? {};
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: courierGradient,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
-      ),
-      padding: EdgeInsets.fromLTRB(18, MediaQuery.of(context).padding.top + 14, 18, 18),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Row(children: [
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(sub, style: const TextStyle(color: Colors.white70, fontSize: 13)),
-              Text('${c['name'] ?? ''}', style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
+      child: Stack(children: [
+        Positioned.fill(child: ColoredBox(color: isDark(context) ? const Color(0xFF1C2A55) : brand)),
+        const Zellige(),
+        Padding(
+          padding: EdgeInsets.fromLTRB(18, MediaQuery.of(context).padding.top + 14, 10, 20),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(children: [
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(sub, style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 13)),
+                  Text('${c['name'] ?? ''}',
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: Colors.white, fontSize: 26, height: 1.2)),
+                ]),
+              ),
+              if (trailing != null) trailing!,
+              IconButton(
+                tooltip: 'الخروج',
+                onPressed: () async {
+                  if (await confirm(context, 'تسجيل الخروج', 'ستصبح غير متصل ولن تصلك الطلبات.', 'خروج')) app.logout();
+                },
+                icon: const Icon(Icons.logout_rounded, color: Colors.white),
+              ),
             ]),
-          ),
-          if (trailing != null) trailing!,
-          IconButton(
-            tooltip: 'الخروج',
-            onPressed: () async {
-              if (await confirm(context, 'تسجيل الخروج', 'ستصبح غير متصل ولن تصلك الطلبات.', 'خروج')) app.logout();
-            },
-            icon: const Icon(Icons.logout_rounded, color: Colors.white),
-          ),
-        ]),
-        ...children,
+            Padding(padding: const EdgeInsetsDirectional.only(end: 8), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children)),
+          ]),
+        ),
       ]),
     );
   }
 }
 
+/// رقم في الرأس: العنوان صغير والقيمة بخط العناوين
 class Stat extends StatelessWidget {
   final String label, value;
   const Stat(this.label, this.value, {super.key});
@@ -49,12 +55,12 @@ class Stat extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Expanded(
         child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(16)),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.13), borderRadius: BorderRadius.circular(16)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+            Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12)),
             const SizedBox(height: 2),
-            Text(value, style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w800)),
+            Text(value, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white, fontSize: 22, height: 1.2)),
           ]),
         ),
       );
@@ -86,7 +92,9 @@ class HomeScreen extends StatelessWidget {
               child: Switch(
                 value: on,
                 activeThumbColor: Colors.white,
-                activeTrackColor: ink,
+                activeTrackColor: tea,
+                inactiveThumbColor: Colors.white70,
+                inactiveTrackColor: Colors.white24,
                 onChanged: block.isNotEmpty ? null : (_) => app.toggleOnline(),
               ),
             ),
@@ -96,12 +104,14 @@ class HomeScreen extends StatelessWidget {
                 alignment: AlignmentDirectional.centerStart,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(12)),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                     Icon(Icons.circle, size: 10, color: on ? const Color(0xFF5EE0A8) : Colors.white54),
                     const SizedBox(width: 6),
-                    Text(on ? 'متصل · تصلك الطلبات القريبة منك' : 'غير متصل · لا تصلك طلبات',
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
+                    Flexible(
+                      child: Text(on ? 'متصل، تصلك الطلبات القريبة منك' : 'غير متصل، لا تصلك طلبات',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
+                    ),
                   ]),
                 ),
               ),
@@ -124,12 +134,12 @@ class HomeScreen extends StatelessWidget {
                 const Note('يمكنك إطفاء الشاشة، ستصلك الطلبات مع صوت تنبيه. لا تغلق التطبيق من قائمة التطبيقات المفتوحة.'),
               if (pool.isNotEmpty) ...[
                 const SizedBox(height: 18),
-                Text('طلبات «اشترِ لي» تنتظر موصّلاً', style: Theme.of(context).textTheme.titleMedium),
+                const SectionTitle('طلبات «اشترِ لي» تنتظر موصّلاً'),
                 const SizedBox(height: 8),
                 for (final x in pool) _PoolCard(o: x.o, d: x.d),
               ],
               const SizedBox(height: 18),
-              Text('توصيلاتي الجارية', style: Theme.of(context).textTheme.titleMedium),
+              const SectionTitle('توصيلاتي الجارية'),
               const SizedBox(height: 8),
               if (!app.loadedOrders)
                 const Padding(padding: EdgeInsets.all(30), child: Center(child: CircularProgressIndicator()))
@@ -162,19 +172,19 @@ class HomeScreen extends StatelessWidget {
                         Text(isAny(o) ? '${o['anyText'] ?? ''}' : itemsText(o),
                             maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: hint)),
                         if (app.unread(o))
-                          const Padding(
-                            padding: EdgeInsets.only(top: 6),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
                             child: Row(children: [
-                              Icon(Icons.chat_rounded, size: 16, color: orange),
-                              SizedBox(width: 4),
-                              Text('رسالة جديدة من الزبون', style: TextStyle(color: orange, fontWeight: FontWeight.w700)),
+                              Icon(Icons.chat_rounded, size: 16, color: onDark(context, harissa)),
+                              const SizedBox(width: 4),
+                              Text('رسالة جديدة من الزبون', style: TextStyle(color: onDark(context, harissaDark), fontWeight: FontWeight.w700)),
                             ]),
                           ),
-                        const SizedBox(height: 6),
-                        Row(children: [
-                          Expanded(child: Text('طلب ${o['no'] ?? ''} · يحصّل من الزبون', style: TextStyle(color: hint, fontSize: 13))),
+                        const SizedBox(height: 8),
+                        Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+                          Expanded(child: Text('طلب ${o['no'] ?? ''}، تحصّل من الزبون', style: TextStyle(color: hint, fontSize: 13))),
                           Text(money(asInt(o['total'])) + (isAny(o) && o['anyPaid'] == null ? ' تقريباً' : ''),
-                              style: const TextStyle(fontWeight: FontWeight.w800)),
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 18)),
                         ]),
                       ]),
                     ),
@@ -205,23 +215,22 @@ class _PoolCardState extends State<_PoolCard> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Box(
-        border: Border.all(color: orange.withValues(alpha: 0.5), width: 1.5),
+        border: Border.all(color: star, width: 1.5),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Row(children: [
             Expanded(
               child: Text('${from.isEmpty ? 'أي محل قريب' : from} ← ${o['zoneName'] ?? ''}',
                   style: const TextStyle(fontWeight: FontWeight.w700)),
             ),
-            if (widget.d != null) Pill(kmText(widget.d)),
+            if (widget.d != null) Pill(kmText(widget.d), icon: Icons.place_outlined),
           ]),
           const SizedBox(height: 6),
           Text('${o['anyText'] ?? ''}'),
           const SizedBox(height: 8),
           Line('تدفع من مالك تقريباً', money(asInt(o['anyBudget']))),
-          Line('ربحك من التوصيلة', money(app.keeps(o)), color: brand),
+          Line('ربحك من التوصيلة', money(app.keeps(o)), color: teaOf(context)),
           const SizedBox(height: 8),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: orange),
             onPressed: busy
                 ? null
                 : () async {

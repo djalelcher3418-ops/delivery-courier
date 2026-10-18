@@ -7,7 +7,6 @@ import '../ui.dart';
 import 'home.dart';
 import 'reviews.dart';
 
-const _good = Color(0xFF0A7D55);
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -97,7 +96,7 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
             Text('${c['phone'] ?? ''}',
                 textDirection: TextDirection.ltr,
                 textAlign: TextAlign.right,
-                style: const TextStyle(color: Colors.white70, fontSize: 15)),
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 15)),
           ]),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
@@ -113,13 +112,13 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
                   ),
                 )),
                 child: Row(children: [
-                  const Icon(Icons.star_rounded, color: star, size: 36),
-                  const SizedBox(width: 10),
+                  const StarBadge(size: 48, color: star, child: Icon(Icons.star_rounded, color: ink, size: 24)),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(r == null ? 'لا تقييم بعد' : '${r.toStringAsFixed(1)} من 5',
-                          style: theme.textTheme.titleMedium),
-                      Text(r == null ? 'يقيّمك الزبائن بعد كل توصيلة.' : 'من $rc تقييم عند الزبائن · اقرأ تعليقاتهم',
+                          style: theme.textTheme.titleMedium?.copyWith(fontSize: 19)),
+                      Text(r == null ? 'يقيّمك الزبائن بعد كل توصيلة.' : 'من ${ratingsText(rc)} عند الزبائن، اقرأ تعليقاتهم',
                           style: TextStyle(color: hint, fontSize: 13)),
                     ]),
                   ),
@@ -127,7 +126,7 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
                 ]),
               ),
               const SizedBox(height: 18),
-              Text('حتى لا يفوتك طلب', style: theme.textTheme.titleMedium),
+              const SectionTitle('حتى لا يفوتك طلب'),
               const SizedBox(height: 8),
               Box(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -135,7 +134,7 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
                     ok: gpsOn,
                     title: 'GPS',
                     okText: 'مشغّل',
-                    badText: 'مطفأ · لن نعرف قربك من المحلات',
+                    badText: 'مطفأ، لن نعرف قربك من المحلات',
                     action: gpsOn == false ? 'فتح الإعدادات' : null,
                     onAction: () async {
                       await Geolocator.openLocationSettings();
@@ -146,7 +145,7 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
                     ok: perm == null ? null : permOk,
                     title: 'إذن الموقع',
                     okText: 'مسموح',
-                    badText: perm == LocationPermission.deniedForever ? 'مرفوض · اسمح به من الإعدادات' : 'غير مسموح بعد',
+                    badText: perm == LocationPermission.deniedForever ? 'مرفوض، اسمح به من الإعدادات' : 'غير مسموح بعد',
                     action: perm != null && !permOk ? 'السماح' : null,
                     onAction: _askLocation,
                   ),
@@ -154,8 +153,8 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
                   _CheckRow(
                     ok: notifOn,
                     title: 'الإشعارات',
-                    okText: 'مسموحة · تصلك العروض والشاشة مطفأة',
-                    badText: 'ممنوعة · لن تعرف بالطلبات والتطبيق في الخلفية',
+                    okText: 'مسموحة، تصلك العروض والشاشة مطفأة',
+                    badText: 'ممنوعة، لن تعرف بالطلبات والتطبيق في الخلفية',
                     action: notifOn == false ? 'السماح' : null,
                     onAction: _askNotif,
                   ),
@@ -167,7 +166,7 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
                       child: Text('صوت التنبيه', style: TextStyle(fontWeight: FontWeight.w600)),
                     ),
                     OutlinedButton(
-                      style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
+                      style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
                       onPressed: testing ? null : _testSound,
                       child: const Text('جرّب الصوت'),
                     ),
@@ -179,7 +178,7 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
               const SizedBox(height: 12),
               Box(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  Text('لتصلك الطلبات والشاشة مطفأة', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                  Text('لتصلك الطلبات والشاشة مطفأة', style: theme.textTheme.titleMedium?.copyWith(fontSize: 17)),
                   const SizedBox(height: 8),
                   const _Tip('أبقِ إشعار «أنت متصل» ظاهراً، فهو ما يبقي التطبيق شغالاً.'),
                   const _Tip('في إعدادات البطارية اختر «بدون قيود» أو «غير محسّن» لتطبيق Delivery موصّل.'),
@@ -194,7 +193,7 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
               ),
               const SizedBox(height: 18),
               OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(foregroundColor: Colors.red.shade700),
+                style: OutlinedButton.styleFrom(foregroundColor: onDark(context, danger)),
                 onPressed: () async {
                   if (await confirm(context, 'تسجيل الخروج', 'ستصبح غير متصل ولن تصلك الطلبات.', 'خروج')) app.logout();
                 },
@@ -226,7 +225,7 @@ class _CheckRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hint = Theme.of(context).hintColor;
-    final color = ok == null ? hint : (ok! ? _good : warn);
+    final color = ok == null ? hint : (ok! ? teaOf(context) : onDark(context, warn));
     return Row(children: [
       Icon(ok == null ? Icons.more_horiz_rounded : (ok! ? Icons.check_circle_rounded : Icons.warning_amber_rounded), color: color),
       const SizedBox(width: 10),
@@ -238,7 +237,7 @@ class _CheckRow extends StatelessWidget {
       ),
       if (action != null)
         FilledButton(
-          style: FilledButton.styleFrom(minimumSize: const Size(0, 40), backgroundColor: warn),
+          style: FilledButton.styleFrom(minimumSize: const Size(0, 44), backgroundColor: harissa),
           onPressed: onAction,
           child: Text(action!),
         ),

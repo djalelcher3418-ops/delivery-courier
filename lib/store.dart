@@ -55,7 +55,7 @@ String fmt(num n) {
   final s = n.round().abs().toString();
   final b = StringBuffer(n < 0 ? '-' : '');
   for (int i = 0; i < s.length; i++) {
-    if (i > 0 && (s.length - i) % 3 == 0) b.write(' ');
+    if (i > 0 && (s.length - i) % 3 == 0) b.write('\u202F'); // مسافة ضيقة لا تكسر الرقم في النص العربي
     b.write(s[i]);
   }
   return b.toString();
@@ -116,11 +116,11 @@ String optsText(Map i) {
   final ex = i['extras'];
   if (ex is List && ex.isNotEmpty) a.add('+ ${ex.join('، ')}');
   if ((i['note'] ?? '').toString().isNotEmpty) a.add('«${i['note']}»');
-  return a.join(' · ');
+  return a.join('، ');
 }
 
 List<Map> itemsOf(Doc o) => (o['items'] is List) ? (o['items'] as List).whereType<Map>().toList() : <Map>[];
-String itemsText(Doc o) => itemsOf(o).map((i) => '${asInt(i['qty'])}× ${i['name'] ?? ''}').join(' · ');
+String itemsText(Doc o) => itemsOf(o).map((i) => '${i['name'] ?? ''} × ${asInt(i['qty'])}').join('، ');
 
 String errText(Object e) {
   String code = '';
@@ -144,9 +144,9 @@ String errText(Object e) {
 }
 
 class CourierState extends ChangeNotifier {
-  final auth = FirebaseAuth.instance;
-  final fs = FirebaseFirestore.instance;
-  final _player = AudioPlayer();
+  late final auth = FirebaseAuth.instance;
+  late final fs = FirebaseFirestore.instance;
+  late final _player = AudioPlayer();
 
   bool ready = false;
   User? user;
@@ -407,7 +407,7 @@ class CourierState extends ChangeNotifier {
     final l = prepLeft(o);
     if (l == null) return '';
     if (l > 0) return 'يجهز في المحل خلال ~$l د';
-    return 'كان يُفترض أن يجهز الآن · قد تنتظر قليلاً';
+    return 'كان يُفترض أن يجهز الآن، قد تنتظر قليلاً';
   }
 
   int doneAt(Doc o) => o['doneAt'] != null ? asInt(o['doneAt']) : asInt(o['createdAtMs']);

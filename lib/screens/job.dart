@@ -58,7 +58,6 @@ class _JobScreenState extends State<JobScreen> {
             ),
             const SizedBox(height: 14),
             FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: orange),
               onPressed: () async {
                 final e = await app.paid(o, ctl.text);
                 if (e.isNotEmpty) {
@@ -102,14 +101,12 @@ class _JobScreenState extends State<JobScreen> {
         Widget action;
         if (st == 'prep' && any) {
           action = FilledButton.icon(
-            style: FilledButton.styleFrom(backgroundColor: orange),
             onPressed: busy ? null : () => _paid(o),
             icon: const Icon(Icons.receipt_long_rounded),
-            label: const Text('اشتريت الطلب · أكتب المبلغ'),
+            label: const Text('اشتريت الطلب، اكتب المبلغ'),
           );
         } else if (st == 'prep' || st == 'ready') {
           action = FilledButton.icon(
-            style: FilledButton.styleFrom(backgroundColor: orange),
             onPressed: busy
                 ? null
                 : () async {
@@ -122,7 +119,7 @@ class _JobScreenState extends State<JobScreen> {
           );
         } else if (st == 'road') {
           action = FilledButton.icon(
-            style: FilledButton.styleFrom(backgroundColor: info),
+            style: FilledButton.styleFrom(backgroundColor: tea),
             onPressed: busy
                 ? null
                 : () async {
@@ -134,18 +131,18 @@ class _JobScreenState extends State<JobScreen> {
             label: Text('سلّمت الطلب وحصّلت ${money(asInt(o['total']))}'),
           );
         } else if (st == 'done') {
-          action = Note('تم التسليم ${clock(app.doneAt(o))} · ${money(asInt(o['total']))}',
-              color: brand, icon: Icons.check_circle_rounded);
+          action = Note('تم التسليم الساعة ${clock(app.doneAt(o))}، وحصّلت ${money(asInt(o['total']))}',
+              color: tea, icon: Icons.check_circle_rounded);
         } else {
           action = Note('أُلغي هذا الطلب. لا تشترِ ولا تسلّم شيئاً، ولا تحصّل أي مبلغ.',
-              color: Colors.red.shade700, icon: Icons.cancel_rounded);
+              color: danger, icon: Icons.cancel_rounded);
         }
 
         final pickupActive = st == 'prep' || st == 'ready';
         return Scaffold(
           appBar: AppBar(
             title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('${any ? 'اشترِ لي · ' : ''}طلب ${o['no'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w800)),
+              Text('${any ? 'اشترِ لي، ' : ''}طلب ${o['no'] ?? ''}'),
               const SizedBox(height: 2),
               statusPill(o),
             ]),
@@ -154,13 +151,13 @@ class _JobScreenState extends State<JobScreen> {
           body: ListView(padding: const EdgeInsets.fromLTRB(16, 6, 16, 120), children: [
             if (st == 'road' && atCustomer && !_toldArrived.contains(o['id'])) ...[
               Box(
-                color: info.withValues(alpha: 0.10),
+                color: brand.withValues(alpha: isDark(context) ? 0.25 : 0.09),
                 child: Row(children: [
-                  const Icon(Icons.where_to_vote_rounded, color: info),
+                  Icon(Icons.where_to_vote_rounded, color: accentOf(context)),
                   const SizedBox(width: 10),
                   const Expanded(child: Text('أنت قريب من عنوان الزبون.', style: TextStyle(fontWeight: FontWeight.w600))),
                   FilledButton(
-                    style: FilledButton.styleFrom(minimumSize: const Size(0, 40), backgroundColor: info),
+                    style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
                     onPressed: () => _tellArrived(o['id']),
                     child: const Text('أبلغه أنني وصلت'),
                   ),
@@ -171,27 +168,34 @@ class _JobScreenState extends State<JobScreen> {
             if (st == 'prep' && !any)
               Note(
                 app.prepText(o).isEmpty ? 'المحل يحضّر الطلب. اذهب إليه الآن.' : 'المحل يحضّر الطلب. ${app.prepText(o)}.',
-                color: warn,
+                color: saffronText,
                 icon: Icons.storefront_rounded,
               ),
-            if (st == 'ready') const Note('الطلب جاهز في المحل، استلمه الآن.', color: brand, icon: Icons.task_alt_rounded),
+            if (st == 'ready') const Note('الطلب جاهز في المحل، استلمه الآن.', color: tea, icon: Icons.task_alt_rounded),
             if (st == 'prep' && any)
               const Note('اشترِ الطلب واحتفظ بالوصل أو صوّره، ثم اكتب المبلغ الذي دفعته بالضبط.',
-                  color: orange, icon: Icons.shopping_bag_rounded),
+                  color: saffronText, icon: Icons.shopping_bag_rounded),
             const SizedBox(height: 12),
-            // ١ · الاستلام
+            // ١: الاستلام
             Box(
-              border: pickupActive ? Border.all(color: any ? orange : warn, width: 2) : null,
+              border: pickupActive ? Border.all(color: accentOf(context), width: 2) : null,
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                Text(any ? '١ · اشترِ من' : '١ · الاستلام من', style: TextStyle(color: hint, fontSize: 12, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 4),
-                Text(any ? (from.isEmpty ? 'أي محل قريب من الزبون' : from) : '${o['shopName'] ?? ''}',
-                    style: Theme.of(context).textTheme.titleMedium),
+                Row(children: [
+                  StepStar('١', active: pickupActive),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(any ? 'اشترِ من' : 'الاستلام من', style: TextStyle(color: hint, fontSize: 12, fontWeight: FontWeight.w700)),
+                      Text(any ? (from.isEmpty ? 'أي محل قريب من الزبون' : from) : '${o['shopName'] ?? ''}',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 19)),
+                    ]),
+                  ),
+                ]),
                 const SizedBox(height: 8),
                 if (any) ...[
                   Container(
                     padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(color: orange.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(12)),
+                    decoration: BoxDecoration(color: isDark(context) ? star.withValues(alpha: 0.14) : saffronSoft, borderRadius: BorderRadius.circular(12)),
                     child: Text('${o['anyText'] ?? ''}', style: const TextStyle(height: 1.5)),
                   ),
                   const SizedBox(height: 6),
@@ -203,14 +207,14 @@ class _JobScreenState extends State<JobScreen> {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 2),
                       child: Text.rich(TextSpan(children: [
-                        TextSpan(text: '${asInt(i['qty'])}× ', style: const TextStyle(fontWeight: FontWeight.w800)),
                         TextSpan(text: '${i['name'] ?? ''}'),
+                        TextSpan(text: ' × ${asInt(i['qty'])}', style: const TextStyle(fontWeight: FontWeight.w800)),
                         if (optsText(i).isNotEmpty) TextSpan(text: '  (${optsText(i)})', style: TextStyle(color: hint)),
                       ])),
                     ),
                   if ('${o['note'] ?? ''}'.isNotEmpty) ...[
                     const SizedBox(height: 6),
-                    Note('ملاحظة: ${o['note']}', color: orange, icon: Icons.sticky_note_2_rounded),
+                    Note('ملاحظة: ${o['note']}', color: saffronText, icon: Icons.sticky_note_2_rounded),
                   ],
                   const SizedBox(height: 10),
                   Row(children: [
@@ -237,16 +241,24 @@ class _JobScreenState extends State<JobScreen> {
               ]),
             ),
             const SizedBox(height: 12),
-            // ٢ · التسليم
+            // ٢: التسليم
             Box(
-              border: st == 'road' ? Border.all(color: info, width: 2) : null,
+              border: st == 'road' ? Border.all(color: accentOf(context), width: 2) : null,
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                Text('٢ · التسليم إلى', style: TextStyle(color: hint, fontSize: 12, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 4),
-                Text('${(o['customerName'] ?? '').toString().isEmpty ? 'الزبون' : o['customerName']} · ${o['zoneName'] ?? ''}',
-                    style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 4),
-                Text('${o['address'] ?? ''}'),
+                Row(children: [
+                  StepStar('٢', active: st == 'road'),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('التسليم إلى', style: TextStyle(color: hint, fontSize: 12, fontWeight: FontWeight.w700)),
+                      Text('${(o['customerName'] ?? '').toString().isEmpty ? 'الزبون' : o['customerName']}',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 19)),
+                    ]),
+                  ),
+                ]),
+                const SizedBox(height: 8),
+                Meta(Icons.place_outlined, '${o['zoneName'] ?? ''}${'${o['address'] ?? ''}'.isEmpty ? '' : '، ${o['address']}'}',
+                    color: Theme.of(context).colorScheme.onSurface),
                 Text('${o['phone'] ?? ''}', textDirection: TextDirection.ltr, textAlign: TextAlign.right, style: TextStyle(color: hint)),
                 const SizedBox(height: 10),
                 Row(children: [
@@ -297,7 +309,7 @@ class _JobScreenState extends State<JobScreen> {
                 ],
                 const Divider(),
                 Line('تحصّل من الزبون', money(asInt(o['total'])), bold: true),
-                Line('ربحك', money(app.keeps(o)), color: brand),
+                Line('ربحك', money(app.keeps(o)), color: teaOf(context)),
               ]),
             ),
           ]),

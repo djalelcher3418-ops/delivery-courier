@@ -49,29 +49,41 @@ class _OfferOverlayState extends State<OfferOverlay> {
           child: Container(
             margin: const EdgeInsets.all(12),
             padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(color: theme.colorScheme.surface, borderRadius: BorderRadius.circular(24)),
+            decoration: BoxDecoration(color: theme.colorScheme.surface, borderRadius: BorderRadius.circular(28)),
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Row(children: [
-                const Pill('طلب جديد قريب منك', bg: Color(0xFFE3ECF7), fg: info, icon: Icons.notifications_active_rounded),
+                const Pill('طلب جديد قريب منك', bg: harissaSoft, fg: harissaDark, icon: Icons.notifications_active_rounded),
                 const Spacer(),
-                SizedBox(
-                  width: 46,
-                  height: 46,
-                  child: Stack(alignment: Alignment.center, children: [
-                    CircularProgressIndicator(value: left / (offerMs / 1000), strokeWidth: 4, color: left <= 15 ? Colors.red : info),
-                    Text('$left', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-                  ]),
+                Semantics(
+                  label: 'بقيت $left ثانية',
+                  excludeSemantics: true,
+                  child: SizedBox(
+                    width: 50,
+                    height: 50,
+                    child: Stack(alignment: Alignment.center, children: [
+                      CircularProgressIndicator(
+                        value: left / (offerMs / 1000),
+                        strokeWidth: 4,
+                        color: left <= 15 ? danger : harissa,
+                        backgroundColor: isDark(context) ? Colors.white12 : harissaSoft,
+                      ),
+                      Text('$left', style: theme.textTheme.titleMedium?.copyWith(fontSize: 17, height: 1)),
+                    ]),
+                  ),
                 ),
               ]),
               const SizedBox(height: 10),
-              Text('${o['shopName'] ?? ''}', style: theme.textTheme.titleLarge),
-              if (d != null) Text('المحل على بعد ${kmText(d)} منك', style: TextStyle(color: theme.hintColor)),
+              Text('${o['shopName'] ?? ''}', style: theme.textTheme.headlineSmall?.copyWith(fontSize: 25, height: 1.2)),
               const SizedBox(height: 6),
-              if (app.prepText(o).isNotEmpty) Text(app.prepText(o), style: TextStyle(color: theme.hintColor)),
-              Text('التسليم إلى ${o['zoneName'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w600)),
+              Wrap(spacing: 14, runSpacing: 4, children: [
+                if (d != null) Meta(Icons.place_outlined, 'المحل على بعد ${kmText(d)}'),
+                Meta(Icons.home_outlined, 'التسليم إلى ${o['zoneName'] ?? ''}'),
+                if (app.prepText(o).isNotEmpty) Meta(Icons.schedule_rounded, app.prepText(o)),
+              ]),
+              const SizedBox(height: 8),
               Text(itemsText(o), style: TextStyle(color: theme.hintColor), maxLines: 3, overflow: TextOverflow.ellipsis),
               const Divider(height: 22),
-              Line('ربحك من التوصيلة', money(app.keeps(o)), bold: true, color: brand),
+              Line('ربحك من التوصيلة', money(app.keeps(o)), bold: true, color: teaOf(context)),
               Line('تحصّل من الزبون', money(asInt(o['total']))),
               const SizedBox(height: 6),
               Text('إذا لم ترد خلال $left ثانية يُعرض على موصّل آخر.',
@@ -89,7 +101,7 @@ class _OfferOverlayState extends State<OfferOverlay> {
                 Expanded(
                   flex: 2,
                   child: FilledButton(
-                    style: FilledButton.styleFrom(minimumSize: const Size(0, 56), backgroundColor: info),
+                    style: FilledButton.styleFrom(minimumSize: const Size(0, 56), backgroundColor: harissa),
                     onPressed: busy ? null : _accept,
                     child: const Text('قبول التوصيل', style: TextStyle(fontSize: 17)),
                   ),
