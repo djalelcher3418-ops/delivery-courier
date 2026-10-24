@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -430,4 +432,65 @@ class BottomBar extends StatelessWidget {
       ),
     );
   }
+}
+
+/// دائرة تحميل لا تعلق بصمت: بعد 15 ثانية تشرح السبب المحتمل وتعرض «أعد المحاولة»
+class SlowSpinner extends StatefulWidget {
+  final VoidCallback? onRetry;
+  const SlowSpinner({super.key, this.onRetry});
+  @override
+  State<SlowSpinner> createState() => _SlowSpinnerState();
+}
+
+class _SlowSpinnerState extends State<SlowSpinner> {
+  bool slow = false;
+  Timer? t;
+
+  @override
+  void initState() {
+    super.initState();
+    t = Timer(const Duration(seconds: 15), () {
+      if (mounted) setState(() => slow = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    t?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const CircularProgressIndicator(),
+              if (slow) ...[
+                const SizedBox(height: 20),
+                Text('الاتصال يأخذ وقتاً أطول من المعتاد', style: Theme.of(context).textTheme.titleMedium, textAlign: TextAlign.center),
+                const SizedBox(height: 6),
+                Text('تحقق من الإنترنت (جرّب الواي فاي بدل بيانات الهاتف أو العكس، وأوقف أي VPN)، وتأكد أن تاريخ الهاتف وساعته صحيحان.',
+                    textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).hintColor, height: 1.5)),
+                if (widget.onRetry != null) ...[
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    style: FilledButton.styleFrom(minimumSize: const Size(160, 48)),
+                    onPressed: () {
+                      setState(() => slow = false);
+                      t?.cancel();
+                      t = Timer(const Duration(seconds: 15), () {
+                        if (mounted) setState(() => slow = true);
+                      });
+                      widget.onRetry!();
+                    },
+                    child: const Text('أعد المحاولة'),
+                  ),
+                ],
+              ],
+            ]),
+          ),
+        ),
+      );
 }

@@ -3,7 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:audioplayers/audioplayers.dart';
+import 'package:audioplayers/audioplayers.dart' hide Source;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -123,6 +123,7 @@ List<Map> itemsOf(Doc o) => (o['items'] is List) ? (o['items'] as List).whereTyp
 String itemsText(Doc o) => itemsOf(o).map((i) => '${i['name'] ?? ''} × ${asInt(i['qty'])}').join('، ');
 
 String errText(Object e) {
+  if (e is TimeoutException) return 'انتهت مهلة الاتصال بالخادم. تحقق من الإنترنت (جرّب الواي فاي بدل بيانات الهاتف أو العكس، وأوقف أي VPN)، وتأكد أن تاريخ الهاتف وساعته صحيحان، ثم أعد المحاولة.';
   String code = '';
   if (e is FirebaseAuthException) code = 'auth/${e.code}';
   if (e is FirebaseException && e is! FirebaseAuthException) code = e.code;
@@ -223,7 +224,9 @@ class CourierState extends ChangeNotifier {
     role = 'resolving';
     notifyListeners();
     try {
-      final r = await fs.collection('users').doc(u.uid).get();
+      // لا ننتظر الخادم بلا نهاية: بعد 15 ثانية نجرّب النسخة المحفوظة في الهاتف، وإلا نعرض السبب وزر إعادة المحاولة
+      final ref = fs.collection('users').doc(u.uid);
+      final r = await ref.get().timeout(const Duration(seconds: 15), onTimeout: () => ref.get(const GetOptions(source: Source.cache)).catchError((_) => throw TimeoutException('users')));
       final d = r.data();
       if (d != null && d['role'] == 'courier') {
         role = 'courier';
@@ -238,9 +241,12 @@ class CourierState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// إعادة محاولة فتح الحساب بعد انقطاع أو مهلة
+  void retry() => _onUser(auth.currentUser);
+
   Future<void> login(String phone, String pass) async {
     final p = cleanPhone(phone);
-    await auth.signInWithEmailAndPassword(email: '$p@$loginDomain', password: pass);
+    await auth.signInWithEmailAndPassword(email: '$p@$loginDomain', password: pass).timeout(const Duration(seconds: 25));
   }
 
   Future<void> logout() async {

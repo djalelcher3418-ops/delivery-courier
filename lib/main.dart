@@ -217,9 +217,7 @@ class CourierApp extends StatelessWidget {
       home: ListenableBuilder(
         listenable: app,
         builder: (context, _) {
-          if (!app.ready || app.role == 'resolving') {
-            return const Scaffold(body: Center(child: CircularProgressIndicator()));
-          }
+          if (!app.ready || app.role == 'resolving') return SlowSpinner(onRetry: app.retry);
           if (app.user == null) return const LoginScreen();
           if (app.role == 'courier') return const Shell();
           return const _Unlinked();
@@ -275,7 +273,11 @@ class _Unlinked extends StatelessWidget {
             ]),
           ),
           const SizedBox(height: 16),
-          FilledButton(onPressed: app.logout, child: const Text('تسجيل الخروج')),
+          if (app.role == 'error') ...[
+            FilledButton(onPressed: app.retry, child: const Text('أعد المحاولة')),
+            const SizedBox(height: 10),
+          ],
+          OutlinedButton(onPressed: app.logout, child: const Text('تسجيل الخروج')),
         ]),
       ),
     );
