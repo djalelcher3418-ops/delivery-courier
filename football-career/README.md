@@ -45,6 +45,19 @@
 - `js/ui.js` — الشاشات.
 - `js/sound.js` — أصوات مولّدة بالكود.
 - `tools/bundle.py` — يجمع اللعبة في ملف HTML واحد.
+- `tools/blender/player_character.py` — سكربت Blender يبني شخصية اللاعب (انظر أدناه).
+
+## شخصية اللاعب في Blender
+
+السكربت يبني رجلاً رياضياً طوله 1.78 م بوضعية T: قميص بلا أكمام وشورت ضاغط أسودان، حافي القدمين، شعر مربوط،
+وهيكل عظمي من 22 عظمة بأسماء Mixamo (Hips, Spine, LeftArm, LeftUpLeg...) مع أوزان جاهزة، وأستوديو تصوير
+(خلفية رمادية، قاعدة دوّارة، إضاءتان) مثل صور المرجع. يعمل على Blender 3.6 وما بعده.
+
+- **من داخل Blender:** Scripting ← Open ← `player_character.py` ← Run Script.
+- **من الطرفية:** `blender -b -P player_character.py -- --glb player.glb --fbx player_mixamo.fbx --render preview.png`
+- **الإعدادات** في أعلى الملف: `HEIGHT` (الطول)، `SKIN_COLOR`، `CLOTH_COLOR`، `HAIR_COLOR`، `STUDIO`،
+  و`FRONT_IMAGE` / `SIDE_IMAGE` لوضع صور المرجع خلف الشخصية للمقارنة أثناء التعديل.
+- `player.glb` للعبة مباشرة، و`player_mixamo.fbx` (المجسم فقط) لرفعه إلى Mixamo وتحميل حركات كرة القدم.
 
 ## الخطوات القادمة
 
