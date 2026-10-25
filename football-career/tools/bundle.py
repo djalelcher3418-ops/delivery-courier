@@ -21,7 +21,11 @@ def main():
 
     css = (ROOT / 'css/style.css').read_text(encoding='utf-8')
     html = html.replace('<link rel="stylesheet" href="css/style.css">', f'<style>\n{css}</style>')
-    for src in re.findall(r'<script src="(js/[^"]+)"></script>', html):
+    if body_only:
+        # صفحات Claude تحمّل المكتبات من CDN فقط بدل تضمينها
+        html = html.replace('<script src="vendor/three.min.js"></script>',
+                            '<script src="https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js"></script>')
+    for src in re.findall(r'<script src="((?:js|vendor)/[^"]+)"></script>', html):
         js = (ROOT / src).read_text(encoding='utf-8')
         html = html.replace(f'<script src="{src}"></script>', f'<script>\n{js}</script>')
 

@@ -1,7 +1,7 @@
-// محرك المباراة: ملعب من الأعلى، تتحكم في لاعبك فقط والباقي ذكاء اصطناعي
-// الإحداثيات بالمتر: الطول 105 (x) والعرض 68 (y). فريقك يهاجم دائماً نحو x = 105
+// محرك المباراة: تتحكم في لاعبك فقط والباقي ذكاء اصطناعي، والرسم ثلاثي الأبعاد في render3d.js
+// الإحداثيات بالمتر: الطول 105 (x) والعرض 68 (y) والارتفاع z. فريقك يهاجم دائماً نحو x = 105 (يمين الشاشة)
 (function () {
-  const L = 105, W = 68, GH = 3.66;
+  const L = 105, W = 68, GH = 3.66, BAR = 2.44, G = 9.8;
   const rnd = (a, b) => a + Math.random() * (b - a);
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const hyp = Math.hypot;
@@ -15,26 +15,36 @@
   };
   const USER_SLOT = { FC: 'FC', FL: 'FL', FR: 'FR', AM: 'CM', CM: 'CM', DL: 'DL', DR: 'DR', DC: 'DCL' };
 
-  // ألوان أرضية الملعب حسب المستوى: من التراب إلى العشب المخطط
-  const GROUNDS = [
-    { a: '#a8875a', b: '#9e7f53', line: 'rgba(250,245,230,.75)', patch: '#8f7247' },
-    { a: '#5f8a3e', b: '#587f39', line: 'rgba(250,250,240,.8)', patch: '#7d8a4a' },
-    { a: '#3f8a3a', b: '#387d34', line: 'rgba(255,255,255,.85)' },
-    { a: '#2f8a3c', b: '#2a7c36', line: 'rgba(255,255,255,.9)' },
-    { a: '#2c8a40', b: '#257a38', line: 'rgba(255,255,255,.95)' },
-  ];
+  // خطوة فيزياء للكرة: في الهواء جاذبية ومقاومة هواء، وعلى الأرض احتكاك وارتداد
+  function stepBall(b, dt) {
+    if (b.z > 0 || b.vz > 0) {
+      b.vz -= G * dt;
+      b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
+      const drag = Math.exp(-dt * 0.12);
+      b.vx *= drag; b.vy *= drag;
+      if (b.z <= 0) {
+        b.z = 0;
+        if (b.vz < -2.5) { b.vz = -b.vz * 0.45; b.vx *= 0.8; b.vy *= 0.8; } else b.vz = 0;
+      }
+    } else {
+      b.x += b.vx * dt; b.y += b.vy * dt;
+      const f = Math.exp(-dt * 0.85);
+      b.vx *= f; b.vy *= f;
+      if (hyp(b.vx, b.vy) < 0.3) b.vx = b.vy = 0;
+    }
+  }
 
   function start(opts) {
     const root = opts.root;
     root.innerHTML = `
       <div class="match">
-        <canvas class="pitch"></canvas>
+        <div class="view"></div>
         <div class="hud">
           <button class="hud-pause" id="m-pause" aria-label="إيقاف مؤقت">II</button>
           <div class="score">
-            <span class="sc-team sc-home"><i class="kit"></i><b class="nm"></b></span>
+            <span class="sc-team"><i class="kit"></i><b class="nm"></b></span>
             <span class="sc-num"><b id="m-s0">0</b><em>-</em><b id="m-s1">0</b></span>
-            <span class="sc-team sc-away"><b class="nm"></b><i class="kit"></i></span>
+            <span class="sc-team"><b class="nm"></b><i class="kit"></i></span>
             <span class="sc-clock" id="m-clock">0'</span>
           </div>
           <canvas class="minimap" width="210" height="136"></canvas>
@@ -42,35 +52,34 @@
         </div>
         <div class="toast" id="m-toast" hidden></div>
         <div class="ctrl">
-          <div class="joy-zone" id="m-joy"><div class="joy" hidden><i></i></div></div>
-          <div class="btns">
-            <button class="b b-sprint" id="m-sprint">ركض</button>
-            <button class="b b-pass" id="m-pass">تمرير</button>
-            <button class="b b-shoot" id="m-shoot">تسديد</button>
+          <div class="joy-zone" id="m-joy"><div class="joy rest"><i></i></div></div>
+          <div class="pad">
+            <button class="b b-cross" data-b="cross">عرضية</button>
+            <button class="b b-shoot" data-b="shoot">تسديد</button>
+            <button class="b b-through" data-b="through">بينية</button>
+            <button class="b b-pass" data-b="pass">تمرير</button>
+            <button class="b b-sprint" data-b="sprint">ركض</button>
           </div>
         </div>
-        <div class="keys-hint">الأسهم: حركة · X: تمرير/اطلب الكرة (اضغط مطولاً لتمريرة بينية) · C: تسديد/افتكاك (اضغط مطولاً لقوة أكبر) · Shift: ركض · P: إيقاف</div>
         <div class="pause-menu" id="m-menu" hidden>
           <div class="pm-card">
             <h3>المباراة متوقفة</h3>
+            <div class="pm-zoom"><span>الكاميرا</span>
+              <button data-z="0.8">قريبة</button><button data-z="1">عادية</button><button data-z="1.25">بعيدة</button>
+            </div>
             <button class="btn primary" id="m-resume">استمر في اللعب</button>
             <button class="btn" id="m-simulate">محاكاة باقي المباراة</button>
           </div>
         </div>
       </div>`;
 
-    const canvas = root.querySelector('.pitch');
-    const ctx = canvas.getContext('2d');
+    const $ = id => root.querySelector('#' + id);
     const mini = root.querySelector('.minimap');
     const mctx = mini.getContext('2d');
-    const $ = id => root.querySelector('#' + id);
-    const ground = GROUNDS[opts.tier] || GROUNDS[2];
     const sound = FC.Sound;
 
     // ---------- الفرق واللاعبون ----------
-    const teams = [opts.ours, opts.theirs].map((sq, ti) => ({
-      ...sq, index: ti, attackRight: ti === 0, players: [],
-    }));
+    const teams = [opts.ours, opts.theirs].map((sq, ti) => ({ ...sq, index: ti, attackRight: ti === 0, players: [] }));
     const userSlot = USER_SLOT[FC.POSITIONS[opts.user.pos].slot];
     let user = null;
     teams.forEach(t => {
@@ -78,7 +87,8 @@
         const p = {
           team: t.index, slot: sp.slot, base: BASE[sp.slot], number: sp.number, name: sp.name, attrs: sp.attrs,
           x: 0, y: 0, vx: 0, vy: 0, fx: t.attackRight ? 1 : -1, fy: 0,
-          isGK: sp.slot === 'GK', isUser: false, tackleCd: 0, decideT: 0, safeT: 0, stunT: 0, holdT: 0, callT: 0,
+          isGK: sp.slot === 'GK', isUser: false, tackleCd: 0, decideT: 0, safeT: 0, stunT: 0, holdT: 0, callTimer: 0, callThrough: false,
+          kickT: 9, headT: 9, slideT: 9, diveT: 9, diveDir: 1, celebT: 9,
         };
         if (t.index === 0 && sp.slot === userSlot) {
           p.isUser = true; p.attrs = opts.user.attrs; p.number = opts.user.number; p.name = opts.user.name;
@@ -90,7 +100,10 @@
     });
     const all = teams[0].players.concat(teams[1].players);
 
-    const ball = { x: L / 2, y: W / 2, vx: 0, vy: 0, owner: null, lastTouch: null, noTouch: null, noTouchT: 0, pass: null, shot: null, tried: new Set(), gkTried: new Set(), assist: null };
+    const ball = {
+      x: L / 2, y: W / 2, z: 0, vx: 0, vy: 0, vz: 0, owner: null, lastTouch: null, noTouch: null, noTouchT: 0,
+      pass: null, shot: null, tried: new Set(), gkTried: new Set(), assist: null, path: [],
+    };
     const score = [opts.startScore ? opts.startScore[0] : 0, opts.startScore ? opts.startScore[1] : 0];
     const stats = { goals: 0, assists: 0, shots: 0, shotsOn: 0, passOk: 0, passBad: 0, tackles: 0, intercepts: 0, lost: 0, dribbles: 0, sprint: 0 };
     const GAME_RATE = 5400 / (opts.minutes * 60); // ثانية مباراة لكل ثانية حقيقية
@@ -100,86 +113,92 @@
     let phase = 'restart', phaseT = 1.2, phaseNext = null;
     let paused = false, ended = false;
     let stamina = clamp(opts.energy, 30, 100);
-    let lastPossTeam = 0;
     const events = [];
 
-    // ---------- الإدخال ----------
-    const input = { jx: 0, jy: 0, keys: new Set(), sprint: false, pass: null, shoot: null };
-    let portrait = false;
+    const view = FC.Render3D.create(root.querySelector('.view'), { tier: opts.tier, teams, zoom: opts.zoom });
+
+    // ---------- الإدخال: عصا تحكم وأزرار مثل PES على الهاتف ----------
+    const input = { jx: 0, jy: 0, sprint: false, held: {} };
 
     function inputVector() {
-      let sx = input.jx, sy = input.jy;
-      const k = input.keys;
-      if (k.has('ArrowLeft') || k.has('KeyA')) sx -= 1;
-      if (k.has('ArrowRight') || k.has('KeyD')) sx += 1;
-      if (k.has('ArrowUp') || k.has('KeyW')) sy -= 1;
-      if (k.has('ArrowDown') || k.has('KeyS')) sy += 1;
-      let m = hyp(sx, sy);
-      if (m < 0.15) return { x: 0, y: 0, m: 0 };
-      if (m > 1) { sx /= m; sy /= m; m = 1; }
-      // تحويل اتجاه الشاشة إلى اتجاه الملعب (في الوضع العمودي فريقك يهاجم للأعلى)
-      return portrait ? { x: -sy, y: sx, m } : { x: sx, y: sy, m };
+      let x = input.jx, y = input.jy;
+      let m = hyp(x, y);
+      if (m < 0.18) return { x: 0, y: 0, m: 0 };
+      if (m > 1) { x /= m; y /= m; m = 1; }
+      return { x: x / m, y: y / m, m };
     }
 
-    const press = (which, down) => {
-      if (paused || ended) return;
-      if (down) { if (!input[which]) input[which] = { t: performance.now() }; }
-      else if (input[which]) {
-        const held = (performance.now() - input[which].t) / 1000;
-        input[which] = null;
-        if (which === 'pass') userPass(held); else userShoot(held);
-      }
-    };
-
-    const onKey = (e, down) => {
-      if (e.code === 'KeyP' || e.code === 'Escape') { if (down) togglePause(); return; }
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
-      if (e.code === 'KeyX' || e.code === 'KeyJ') { if (!e.repeat) press('pass', down); return; }
-      if (e.code === 'KeyC' || e.code === 'KeyK' || e.code === 'Space') { if (!e.repeat) press('shoot', down); return; }
-      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') { input.sprint = down; return; }
-      if (down) input.keys.add(e.code); else input.keys.delete(e.code);
-    };
-    const kd = e => onKey(e, true), ku = e => onKey(e, false);
-    window.addEventListener('keydown', kd);
-    window.addEventListener('keyup', ku);
-
-    // عصا التحكم: تظهر حيث تلمس في النصف الأيسر
     const joyZone = $('m-joy'), joy = joyZone.querySelector('.joy'), knob = joy.querySelector('i');
     let joyId = null, joyX = 0, joyY = 0;
     joyZone.addEventListener('pointerdown', e => {
+      if (joyId !== null) return;
       joyId = e.pointerId; joyX = e.clientX; joyY = e.clientY;
-      joyZone.setPointerCapture(e.pointerId);
+      try { joyZone.setPointerCapture(e.pointerId); } catch (err) { /* لمسة بلا معرّف */ }
       const r = joyZone.getBoundingClientRect();
       joy.style.left = (e.clientX - r.left) + 'px'; joy.style.top = (e.clientY - r.top) + 'px';
-      joy.hidden = false; knob.style.transform = 'translate(-50%,-50%)';
+      joy.classList.remove('rest');
+      knob.style.transform = 'translate(-50%,-50%)';
     });
     joyZone.addEventListener('pointermove', e => {
       if (e.pointerId !== joyId) return;
       let dx = e.clientX - joyX, dy = e.clientY - joyY;
-      const m = hyp(dx, dy), R = 48;
+      const m = hyp(dx, dy), R = 50;
       if (m > R) { dx *= R / m; dy *= R / m; }
       input.jx = dx / R; input.jy = dy / R;
       knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
     });
-    const joyEnd = e => { if (e.pointerId !== joyId) return; joyId = null; input.jx = input.jy = 0; joy.hidden = true; };
+    const joyEnd = e => {
+      if (e.pointerId !== joyId) return;
+      joyId = null; input.jx = input.jy = 0;
+      joy.classList.add('rest'); joy.style.left = joy.style.top = '';
+      knob.style.transform = 'translate(-50%,-50%)';
+    };
     joyZone.addEventListener('pointerup', joyEnd);
     joyZone.addEventListener('pointercancel', joyEnd);
 
-    const bindBtn = (id, fnDown, fnUp) => {
-      const b = $(id);
-      b.addEventListener('pointerdown', e => { e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add('on'); fnDown(); });
-      const up = () => { if (!b.classList.contains('on')) return; b.classList.remove('on'); fnUp(); };
+    root.querySelectorAll('[data-b]').forEach(b => {
+      const which = b.dataset.b;
+      b.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        try { b.setPointerCapture(e.pointerId); } catch (err) { /* لمسة بلا معرّف */ }
+        b.classList.add('on');
+        if (navigator.vibrate) try { navigator.vibrate(8); } catch (err) { /* لا اهتزاز */ }
+        buttonDown(which);
+      });
+      const up = () => { if (!b.classList.contains('on')) return; b.classList.remove('on'); buttonUp(which); };
       b.addEventListener('pointerup', up);
       b.addEventListener('pointercancel', up);
       b.addEventListener('contextmenu', e => e.preventDefault());
-    };
-    bindBtn('m-pass', () => press('pass', true), () => press('pass', false));
-    bindBtn('m-shoot', () => press('shoot', true), () => press('shoot', false));
-    bindBtn('m-sprint', () => { input.sprint = true; }, () => { input.sprint = false; });
+    });
+
+    function buttonDown(which) {
+      if (paused || ended) return;
+      if (which === 'sprint') { input.sprint = true; return; }
+      input.held[which] = performance.now();
+      const own = ball.owner === user;
+      if (which === 'pass') own ? userPass(false) : callForBall(false);
+      else if (which === 'through') own ? userPass(true) : callForBall(true);
+      else if (which === 'cross' && own) userCross();
+      else if (which === 'shoot' && !own) userTackle();
+    }
+    function buttonUp(which) {
+      if (which === 'sprint') { input.sprint = false; return; }
+      const t0 = input.held[which];
+      delete input.held[which];
+      if (paused || ended || t0 == null) return;
+      if (which === 'shoot' && ball.owner === user) userShoot((performance.now() - t0) / 1000);
+    }
 
     $('m-pause').addEventListener('click', togglePause);
     $('m-resume').addEventListener('click', togglePause);
     $('m-simulate').addEventListener('click', simulateRest);
+    root.querySelectorAll('[data-z]').forEach(b => b.addEventListener('click', () => {
+      view.setZoom(+b.dataset.z);
+      if (opts.onZoom) opts.onZoom(+b.dataset.z);
+      markZoom(+b.dataset.z);
+    }));
+    function markZoom(z) { root.querySelectorAll('[data-z]').forEach(b => b.classList.toggle('on', +b.dataset.z === z)); }
+    markZoom(opts.zoom || 1);
 
     function togglePause() {
       if (ended) return;
@@ -211,17 +230,39 @@
 
     function minute() { return Math.min(90, Math.floor(gameSec / 60)); }
 
+    // مسار الكرة المتوقع للثلاث ثوانٍ القادمة (يُحسب مرة كل إطار)
+    function predictPath() {
+      const b = { x: ball.x, y: ball.y, z: ball.z, vx: ball.vx, vy: ball.vy, vz: ball.vz };
+      const path = ball.path;
+      path.length = 0;
+      for (let i = 1; i <= 60; i++) { stepBall(b, 0.05); path.push({ t: i * 0.05, x: b.x, y: b.y, z: b.z }); }
+    }
+
+    // أقرب نقطة على مسار الكرة يستطيع اللاعب بلوغها قبلها، والكرة منخفضة بما يكفي لاستلامها
+    function interceptPoint(p, maxZ = 1.1) {
+      if (ball.owner) return [ball.x, ball.y];
+      const sp = maxSpd(p);
+      for (const pt of ball.path) {
+        if (pt.z > maxZ) continue;
+        if (hyp(pt.x - p.x, pt.y - p.y) / sp <= pt.t + 0.1) return [pt.x, pt.y];
+      }
+      const e = ball.path[ball.path.length - 1];
+      return e ? [e.x, e.y] : [ball.x, ball.y];
+    }
+
     // ---------- الركلات ----------
-    function kick(p, tx, ty, speed, kind, target) {
+    function kick(p, tx, ty, speed, kind, target, vz = 0) {
       const d = hyp(tx - ball.x, ty - ball.y) || 1;
       ball.owner = null;
       ball.vx = (tx - ball.x) / d * speed;
       ball.vy = (ty - ball.y) / d * speed;
+      ball.vz = vz; ball.z = Math.max(ball.z, vz > 0 ? 0.05 : 0);
       ball.lastTouch = p; ball.noTouch = p; ball.noTouchT = 0.28;
       ball.tried = new Set(); ball.gkTried = new Set();
       ball.pass = kind === 'pass' ? { by: p, to: target } : null;
       ball.shot = kind === 'shot' ? { by: p } : null;
       p.decideT = 0.4;
+      p.kickT = 0;
       sound.kick(kind === 'shot' ? 1 : 0.6);
     }
 
@@ -232,8 +273,7 @@
       const t = d0 / (speed * 0.75);
       tx += r.vx * t; ty += r.vy * t;
       if (through) {
-        const t2 = teamOf(r);
-        tx += (t2.attackRight ? 1 : -1) * 6;
+        tx += (teamOf(r).attackRight ? 1 : -1) * 6;
         speed = clamp(speed + 2, 12, 28);
       }
       const err = (100 - p.attrs.passing) / 100 * 0.14 * gauss() * (p.stunT > 0 ? 2 : 1);
@@ -242,27 +282,45 @@
       kick(p, ball.x + Math.cos(ang) * d, ball.y + Math.sin(ang) * d, speed, 'pass', r);
     }
 
+    // تمريرة عالية نحو الزميل. arriveZ: ارتفاع الكرة عند وصولها (1.7 = في مستوى الرأس للعرضيات)
+    function loftTo(p, r, arriveZ = 0.3) {
+      const d0 = dist(p, r);
+      const hs = clamp(d0 * 0.55 + 7, 12, 24);
+      const T = d0 / hs;
+      let tx = r.x + r.vx * T, ty = r.y + r.vy * T;
+      const err = (100 - p.attrs.passing) / 100 * 3.5;
+      tx += gauss() * err; ty += gauss() * err;
+      const d = hyp(tx - ball.x, ty - ball.y);
+      const h = clamp(d * 0.55 + 7, 12, 24);
+      // زمن الطيران مع مقاومة الهواء، ثم السرعة العمودية التي توصل الكرة إلى الارتفاع المطلوب
+      const T2 = -Math.log(1 - Math.min(0.95, d * 0.12 / h)) / 0.12;
+      const vz = clamp((arriveZ + 0.5 * G * T2 * T2) / T2, 3, 16);
+      // نطيل الهدف قليلاً حتى يكمل الكرة طريقها خلفه إن لم تُلمس
+      kick(p, ball.x + (tx - ball.x) * 1.0, ball.y + (ty - ball.y) * 1.0, h, 'pass', r, vz);
+    }
+    const isBoxTarget = (t, q) => ax(t, q.x) > L - 20 && Math.abs(q.y - W / 2) < 16;
+
     function shoot(p, aimY, power) {
       const t = teamOf(p);
       const gx = goalX(t);
       const speed = 17 + power * 15;
-      const ang0 = Math.atan2(aimY - ball.y, gx - ball.x);
       const distG = Math.abs(gx - ball.x);
-      const err = (0.035 + (100 - p.attrs.shooting) / 100 * 0.11 + (power > 0.96 ? 0.06 : 0) + distG / 900) * gauss();
-      const ang = ang0 + err;
-      kick(p, ball.x + Math.cos(ang) * 50, ball.y + Math.sin(ang) * 50, speed, 'shot');
+      const sk = (100 - p.attrs.shooting) / 100;
+      const err = (0.035 + sk * 0.11 + (power > 0.96 ? 0.06 : 0) + distG / 900) * gauss();
+      const ang = Math.atan2(aimY - ball.y, gx - ball.x) + err;
+      // الارتفاع: التسديدة القوية جداً قد تطير فوق العارضة
+      const vz = 1 + power * 2.6 + gauss() * (0.8 + sk * 2.4) + (power > 0.96 ? 2.2 : 0);
+      kick(p, ball.x + Math.cos(ang) * 50, ball.y + Math.sin(ang) * 50, speed, 'shot', null, Math.max(0, vz));
       if (p.isUser) stats.shots++;
     }
 
     // ---------- تحكم المستخدم ----------
-    function userPass(held) {
-      if (phase !== 'play' && phase !== 'restart') return;
-      if (ball.owner !== user) { user.callTimer = 2.2; return; } // اطلب الكرة
+    function pickTeammate(filter) {
       const iv = inputVector();
       const dx = iv.m ? iv.x : user.fx, dy = iv.m ? iv.y : user.fy;
       let best = null, bestS = -1e9;
       for (const q of teams[0].players) {
-        if (q === user) continue;
+        if (q === user || (filter && !filter(q))) continue;
         const ox = q.x - user.x, oy = q.y - user.y;
         const d = hyp(ox, oy);
         if (d < 2) continue;
@@ -270,43 +328,64 @@
         const s = cos * 30 - Math.abs(d - 16) * 0.6;
         if (s > bestS) { bestS = s; best = q; }
       }
-      if (best) { passTo(user, best, held > 0.3); if (phase === 'restart') { phase = 'play'; } }
+      return best;
+    }
+
+    function startPlay() { if (phase === 'restart') phase = 'play'; }
+
+    function userPass(through) {
+      if (phase !== 'play' && phase !== 'restart') return;
+      const r = pickTeammate();
+      if (r) { passTo(user, r, through); startPlay(); }
+    }
+
+    function userCross() {
+      if (phase !== 'play' && phase !== 'restart') return;
+      // العرضية تبحث أولاً عن زميل داخل منطقة الجزاء
+      const inBox = q => q.x > L - 20 && Math.abs(q.y - W / 2) < 22;
+      const r = (ball.x > L - 35 && pickTeammate(inBox)) || pickTeammate();
+      if (r) { loftTo(user, r, isBoxTarget(teams[0], r) ? 1.7 : 0.3); startPlay(); }
     }
 
     function userShoot(held) {
       if (phase !== 'play' && phase !== 'restart') return;
-      if (ball.owner === user) {
-        const iv = inputVector();
-        // اتجاه الإدخال الجانبي يختار الزاوية
-        const side = clamp(iv.y * 1.6, -1, 1);
-        const aimY = W / 2 + side * (GH - 0.6);
-        shoot(user, aimY, clamp(held / 0.8, 0.3, 1));
-        if (phase === 'restart') phase = 'play';
-        return;
-      }
-      // افتكاك الكرة
+      const iv = inputVector();
+      const side = clamp(iv.y * 1.6, -1, 1); // الاتجاه الجانبي يختار الزاوية
+      shoot(user, W / 2 + side * (GH - 0.6), clamp(held / 0.8, 0.3, 1));
+      startPlay();
+    }
+
+    function callForBall(through) {
+      user.callTimer = 2.2;
+      user.callThrough = through;
+    }
+
+    function userTackle() {
       if (user.tackleCd > 0) return;
       const c = ball.owner;
       user.tackleCd = 0.8;
-      if (c && c.team === 1 && dist(user, c) < 2.4) {
+      if (c && c.team === 1 && dist(user, c) < 2.6) {
         const d = dist(user, c) || 1;
         user.vx += (c.x - user.x) / d * 5; user.vy += (c.y - user.y) / d * 5;
+        user.fx = (c.x - user.x) / d; user.fy = (c.y - user.y) / d;
+        user.slideT = 0;
         if (c.safeT <= 0 && Math.random() < clamp(0.5 + (user.attrs.defending - c.attrs.dribbling) / 110, 0.15, 0.9)) {
           winBall(user, c); stats.tackles++;
           sound.kick(0.4);
         } else {
-          user.stunT = 0.45; c.safeT = 0.4;
+          user.stunT = 0.6; c.safeT = 0.4;
         }
-      } else if (!c && dist(user, ball) < 2.6) {
+      } else if (!c && dist(user, ball) < 2.8 && ball.z < 1) {
         user.vx += (ball.x - user.x) * 2; user.vy += (ball.y - user.y) * 2;
+        user.slideT = 0;
       }
     }
 
     function winBall(p, from) {
       ball.owner = p; ball.lastTouch = p; ball.pass = null; ball.shot = null;
+      ball.z = 0; ball.vz = 0;
       p.safeT = 0.6; p.decideT = 0.25;
       if (from) { from.stunT = 0.5; if (from.isUser) stats.lost++; }
-      lastPossTeam = p.team;
     }
 
     // ---------- استلام الكرة ----------
@@ -325,6 +404,33 @@
       if (p.isUser) p.callTimer = 0;
       winBall(p, null);
       if (p.isGK) p.holdT = rnd(0.7, 1.2);
+    }
+
+    // ضربة رأسية: تسديد قرب المرمى، إبعاد قرب مرماك، أو تمريرة
+    function header(p) {
+      const t = teamOf(p);
+      p.headT = 0;
+      ball.tried = new Set([p]);
+      const prev = ball.pass;
+      if (prev && prev.by.team === p.team && prev.by !== p) ball.assist = { by: prev.by, t: gameSec };
+      if (ax(t, p.x) > L - 20 && Math.abs(p.y - W / 2) < 16) {
+        const aim = W / 2 + (p.isUser ? clamp(inputVector().y * 1.6, -1, 1) : (Math.random() < 0.5 ? -1 : 1) * rnd(0.3, 1)) * (GH - 0.5);
+        const gx = goalX(t);
+        const err = (0.05 + (100 - p.attrs.shooting) / 100 * 0.12) * gauss();
+        const ang = Math.atan2(aim - ball.y, gx - ball.x) + err;
+        kick(p, ball.x + Math.cos(ang) * 40, ball.y + Math.sin(ang) * 40, 12 + p.attrs.physical / 10, 'shot', null, rnd(-1.5, 2));
+        if (p.isUser) stats.shots++;
+        p.kickT = 9;
+        toast('ضربة رأسية!', 800);
+      } else if (ax(t, p.x) < 35) {
+        kick(p, ax(t, p.x + (t.attackRight ? 25 : -25)), clamp(p.y + rnd(-15, 15), 3, W - 3), 16, 'clear', null, 6);
+        p.kickT = 9;
+      } else {
+        const mates = t.players.filter(q => q !== p && !q.isGK && dist(q, p) < 18);
+        const r = mates.sort((a, b) => ax(t, b.x) - ax(t, a.x))[0];
+        if (r) passTo(p, r, false); else kick(p, ax(t, ax(t, p.x) + 10), p.y, 10, 'clear', null, 1);
+        p.kickT = 9;
+      }
     }
 
     // ---------- الذكاء الاصطناعي ----------
@@ -360,18 +466,6 @@
       p.vx += (dvx - p.vx) * a; p.vy += (dvy - p.vy) * a;
     }
 
-    // أقرب نقطة على مسار الكرة يستطيع اللاعب بلوغها قبلها
-    function interceptPoint(p) {
-      const k = 0.85, sp = maxSpd(p);
-      for (let tau = 0; tau <= 2.5; tau += 0.1) {
-        const f = (1 - Math.exp(-k * tau)) / k;
-        const bx = ball.x + ball.vx * f, by = ball.y + ball.vy * f;
-        if (hyp(bx - p.x, by - p.y) / sp <= tau + 0.1) return [bx, by];
-      }
-      const f = (1 - Math.exp(-k * 2.5)) / k;
-      return [ball.x + ball.vx * f, ball.y + ball.vy * f];
-    }
-
     function nearestOpp(p) {
       let best = null, bd = 1e9;
       for (const q of teams[1 - p.team].players) {
@@ -390,9 +484,7 @@
         const d = dist(p, r);
         if (d < 4 || d > 38) continue;
         let open = 99;
-        for (const o of opps) {
-          open = Math.min(open, segDist(o.x, o.y, p.x, p.y, r.x, r.y) * 1.2, dist(o, r));
-        }
+        for (const o of opps) open = Math.min(open, segDist(o.x, o.y, p.x, p.y, r.x, r.y) * 1.2, dist(o, r));
         if (open < 1.6) continue;
         const prog = ax(t, r.x) - ax(t, p.x);
         let s = prog * (prog > 0 ? 0.6 : 1) + Math.min(open, 6) * 1.5 - d * 0.1;
@@ -419,7 +511,10 @@
         if (p.holdT > 0) return;
         const bp = bestPass(p);
         if (bp && bp.s > -5) passTo(p, bp.r, false);
-        else kick(p, ax(t, 60), rnd(10, W - 10), 26, 'pass', null);
+        else {
+          const far = t.players.filter(q => q.slot[0] === 'F').sort(() => Math.random() - 0.5)[0];
+          loftTo(p, far);
+        }
         return;
       }
       if (p.decideT <= 0) {
@@ -430,8 +525,7 @@
           let pr = dG < 12 ? 0.8 : dG < 18 ? 0.5 : dG < 24 ? 0.22 : 0.08;
           if (od < 2.5) pr += 0.15;
           if (Math.random() < pr) {
-            const aim = W / 2 + (Math.random() < 0.5 ? -1 : 1) * rnd(1, GH - 0.5);
-            shoot(p, aim, rnd(0.55, 0.95));
+            shoot(p, W / 2 + (Math.random() < 0.5 ? -1 : 1) * rnd(1, GH - 0.5), rnd(0.55, 0.95));
             return;
           }
         }
@@ -445,29 +539,30 @@
         const bp = bestPass(p);
         const isDef = p.slot[0] === 'D';
         const calling = bp && bp.r.isUser && bp.r.callTimer > 0;
-        const byline = ax(t, p.x) > L - 18 && wide > 12; // قرب خط المرمى على الجناح: عرضية
-        if (byline && bp && bp.s > -12) { passTo(p, bp.r, false); return; }
+        if (calling) { passTo(p, bp.r, user.callThrough); return; }
+        // قرب خط المرمى على الجناح: عرضية عالية نحو المنطقة
+        if (ax(t, p.x) > L - 22 && wide > 12) {
+          const targets = t.players.filter(q => q !== p && ax(t, q.x) > L - 20 && Math.abs(q.y - W / 2) < 14);
+          if (targets.length && Math.random() < 0.7) { loftTo(p, targets[Math.floor(Math.random() * targets.length)], 1.7); return; }
+          if (bp && bp.s > -12) { passTo(p, bp.r, false); return; }
+        }
         const space = ahead > 7 && !(isDef && ax(t, p.x) < 30);
         const takeOn = !isDef && Math.random() < p.attrs.dribbling / 260;
-        if (bp && (calling || (!takeOn && ((od < 3 && bp.s > 0) || (!space && bp.s > (isDef ? 2 : 6)))) || bp.s > 22)) {
+        if (bp && ((!takeOn && ((od < 3 && bp.s > 0) || (!space && bp.s > (isDef ? 2 : 6)))) || bp.s > 22)) {
           passTo(p, bp.r, bp.r.slot[0] === 'F' && Math.random() < 0.35);
           return;
         }
       }
       // المراوغة نحو المرمى مع الابتعاد عن أقرب خصم
       let tx = gx, ty = W / 2 + (p.y - W / 2) * 0.6;
-      if (ax(t, p.x) > L - 20) { tx = ax(t, L - 8); ty = W / 2 + (p.y - W / 2) * 0.3; } // يدخل نحو المنطقة
-      if (opp && od < 5) {
-        const away = (p.y - opp.y) || (Math.random() - 0.5);
-        ty += Math.sign(away) * 8;
-      }
+      if (ax(t, p.x) > L - 20) { tx = ax(t, L - 8); ty = W / 2 + (p.y - W / 2) * 0.3; }
+      if (opp && od < 5) ty += Math.sign((p.y - opp.y) || (Math.random() - 0.5)) * 8;
       moveToward(p, tx, clamp(ty, 3, W - 3), 0.82, dt);
     }
 
     function teamAI(t, dt) {
       const owner = ball.owner;
       const hasBall = owner && owner.team === t.index;
-      // من يضغط على حامل الكرة أو يطارد الكرة الحرة
       let chasers = [];
       const receiver = !owner && ball.pass && ball.pass.to && ball.pass.to.team === t.index && !ball.pass.to.isUser ? ball.pass.to : null;
       if (!hasBall && !receiver) {
@@ -482,15 +577,16 @@
       }
       for (const p of t.players) {
         if (p.isUser) continue;
+        if (p.slideT < 0.5) { p.vx *= 0.94; p.vy *= 0.94; continue; }
         if (p === owner) { carrierAI(p, dt); continue; }
         if (p.isGK) { keeperAI(p, t, dt); continue; }
         if (p === receiver) {
-          const [ix, iy] = interceptPoint(p);
+          const [ix, iy] = interceptPoint(p, 2.4);
           moveToward(p, ix, iy, 1, dt);
           continue;
         }
         if (chasers.includes(p)) {
-          const [tx, ty] = owner ? [owner.x, owner.y] : interceptPoint(p);
+          const [tx, ty] = interceptPoint(p);
           moveToward(p, tx, ty, 0.97, dt);
           if (owner && owner.team !== p.team) tryTackle(p, owner);
           continue;
@@ -503,6 +599,7 @@
     function tryTackle(p, c) {
       if (p.tackleCd > 0 || c.safeT > 0 || c.isGK || dist(p, c) > 1.6) return;
       p.tackleCd = rnd(0.6, 1.1);
+      if (Math.random() < 0.3) p.slideT = 0;
       let pr = 0.27 + (p.attrs.defending - c.attrs.dribbling) / 170 + (p.attrs.physical - c.attrs.physical) / 400;
       if (c.isUser) pr *= 0.75;
       if (Math.random() < clamp(pr, 0.05, 0.6)) {
@@ -523,20 +620,20 @@
 
     function keeperAI(p, t, dt) {
       const ownX = t.attackRight ? 0 : L;
-      if (ball.shot && !ball.owner) {
-        const vxTo = ownX - ball.x;
-        if (Math.sign(ball.vx) === Math.sign(vxTo) && Math.abs(ball.vx) > 2) {
-          const tt = (ownX - ball.x) / ball.vx;
-          const yc = clamp(ball.y + ball.vy * tt, W / 2 - GH - 1, W / 2 + GH + 1);
-          moveToward(p, ax(t, 1.6), yc, 1, dt);
-          return;
-        }
+      if (ball.shot && !ball.owner && Math.sign(ball.vx) === Math.sign(ownX - ball.x) && Math.abs(ball.vx) > 2) {
+        const tt = (ownX - ball.x) / ball.vx;
+        const yc = clamp(ball.y + ball.vy * tt, W / 2 - GH - 1, W / 2 + GH + 1);
+        moveToward(p, ax(t, 1.6), yc, 1, dt);
+        return;
       }
       // يخرج للكرة الحرة داخل منطقته
-      const bxa = ax(t, ball.x);
-      if (!ball.owner && bxa < 15 && Math.abs(ball.y - W / 2) < 18) {
+      if (!ball.owner && ax(t, ball.x) < 15 && Math.abs(ball.y - W / 2) < 18) {
         const mates = t.players.filter(q => !q.isGK).map(q => dist(q, ball));
-        if (dist(p, ball) < Math.min(...mates) + 1) { moveToward(p, ball.x, ball.y, 1, dt); return; }
+        if (dist(p, ball) < Math.min(...mates) + 1) {
+          const [ix, iy] = interceptPoint(p, 2.6);
+          moveToward(p, ix, iy, 1, dt);
+          return;
+        }
       }
       const [tx, ty] = targetFor(p);
       moveToward(p, tx, ty, 0.7, dt);
@@ -544,14 +641,23 @@
 
     // ---------- اللاعب الذي تتحكم فيه ----------
     function userUpdate(dt) {
-      const iv = inputVector();
+      let iv = inputVector();
       const own = ball.owner === user;
+      // زر العرضية بدون كرة = ضغط: يركض لاعبك تلقائياً نحو الكرة
+      if (!own && input.held.cross != null && iv.m === 0) {
+        const [tx, ty] = interceptPoint(user);
+        const d = hyp(tx - user.x, ty - user.y);
+        if (d > 0.5) iv = { x: (tx - user.x) / d, y: (ty - user.y) / d, m: 1 };
+      }
       const canSprint = stamina > 12 && input.sprint;
       let sp = maxSpd(user) * (canSprint ? 1.05 : 0.8) * (own ? 0.92 : 1) * (0.75 + stamina / 400);
       if (user.stunT > 0) sp *= 0.5;
-      const a = Math.min(1, dt * (own ? 7 : 9));
-      user.vx += (iv.x * sp * iv.m - user.vx) * a;
-      user.vy += (iv.y * sp * iv.m - user.vy) * a;
+      if (user.slideT < 0.45) { user.vx *= 0.95; user.vy *= 0.95; }
+      else {
+        const a = Math.min(1, dt * (own ? 7 : 9));
+        user.vx += (iv.x * sp * iv.m - user.vx) * a;
+        user.vy += (iv.y * sp * iv.m - user.vy) * a;
+      }
       const moving = hyp(user.vx, user.vy) > 2;
       if (canSprint && iv.m > 0.3) {
         stamina = Math.max(0, stamina - dt * (10 - user.attrs.physical * 0.05));
@@ -559,53 +665,60 @@
       } else {
         stamina = Math.min(100, stamina + dt * (moving ? 2 : 4.5));
       }
-      user.callTimer = Math.max(0, (user.callTimer || 0) - dt);
+      user.callTimer = Math.max(0, user.callTimer - dt);
     }
 
     // ---------- الفيزياء ----------
     function physics(dt, ballLive) {
       for (const p of all) {
         p.tackleCd -= dt; p.safeT -= dt; p.stunT -= dt;
+        p.kickT += dt; p.headT += dt; p.slideT += dt; p.diveT += dt; p.celebT += dt;
         p.x = clamp(p.x + p.vx * dt, -3, L + 3);
         p.y = clamp(p.y + p.vy * dt, -3, W + 3);
         const s = hyp(p.vx, p.vy);
-        if (s > 0.6) { p.fx = p.vx / s; p.fy = p.vy / s; }
+        if (s > 0.6 && p.slideT > 0.5 && p.diveT > 0.9) { p.fx = p.vx / s; p.fy = p.vy / s; }
       }
       // منع التداخل بين اللاعبين
       for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
         const a = all[i], b = all[j];
         const dx = b.x - a.x, dy = b.y - a.y, d = hyp(dx, dy);
-        if (d > 0 && d < 1.3) {
-          const push = (1.3 - d) / 2;
+        if (d > 0 && d < 1.0) {
+          const push = (1.0 - d) / 2;
           a.x -= dx / d * push; a.y -= dy / d * push; b.x += dx / d * push; b.y += dy / d * push;
         }
       }
 
       if (!ballLive) return;
-      let px = ball.x, py = ball.y;
+      let px = ball.x, py = ball.y, pz = ball.z;
       if (ball.owner) {
         const o = ball.owner;
-        ball.x = o.x + o.fx * 0.75; ball.y = o.y + o.fy * 0.75;
+        ball.x = o.x + o.fx * 0.7; ball.y = o.y + o.fy * 0.7; ball.z = 0;
         ball.vx = o.vx; ball.vy = o.vy;
         if (ball.x >= 0 && ball.x <= L && ball.y >= 0 && ball.y <= W) return;
         // حامل الكرة خرج بها من الملعب
         ball.lastTouch = o; ball.owner = null; ball.shot = null;
-        px = clamp(ball.x, 0.01, L - 0.01); py = clamp(ball.y, 0.01, W - 0.01);
+        px = clamp(ball.x, 0.01, L - 0.01); py = clamp(ball.y, 0.01, W - 0.01); pz = 0;
       } else {
-      ball.x += ball.vx * dt; ball.y += ball.vy * dt;
-      const f = Math.exp(-dt * 0.85);
-      ball.vx *= f; ball.vy *= f;
-      if (hyp(ball.vx, ball.vy) < 0.3) { ball.vx = ball.vy = 0; }
-      ball.noTouchT -= dt;
+        stepBall(ball, dt);
+        ball.noTouchT -= dt;
       }
 
-      // هدف أو خروج
+      // هدف أو القائم أو خروج من خط المرمى
       if (ball.x < 0 || ball.x > L) {
         const lineX = ball.x < 0 ? 0 : L;
-        const t = (lineX - px) / ((ball.x - px) || 1e-6);
-        const yc = py + (ball.y - py) * t;
-        if (Math.abs(yc - W / 2) < GH) { goal(ball.x > L ? 0 : 1); return; }
-        // الكرة خرجت من خط المرمى: ركنية أو ركلة مرمى
+        const f = (lineX - px) / ((ball.x - px) || 1e-6);
+        const yc = py + (ball.y - py) * f, zc = pz + (ball.z - pz) * f;
+        const off = Math.abs(yc - W / 2);
+        if (off < GH && zc < BAR) { goal(ball.x > L ? 0 : 1); return; }
+        if ((off < GH + 0.25 && zc < BAR + 0.2) || (off < GH + 0.2 && zc < BAR + 0.25)) {
+          // ارتطام بالقائم أو العارضة
+          ball.x = lineX + (lineX ? -0.2 : 0.2);
+          ball.vx = -ball.vx * 0.5; ball.vy += rnd(-3, 3); ball.vz = Math.abs(ball.vz) * 0.3;
+          ball.shot = null; ball.tried = new Set();
+          toast(zc > BAR - 0.1 ? 'العارضة!' : 'القائم!', 900);
+          sound.kick(0.9);
+          return;
+        }
         const defTeam = ball.x > L ? 1 : 0;
         if (ball.lastTouch && ball.lastTouch.team === defTeam) {
           restart(1 - defTeam, lineX === 0 ? 0.6 : L - 0.6, yc < W / 2 ? 0.6 : W - 0.6, 'ركنية');
@@ -620,22 +733,24 @@
         return;
       }
 
-      // الحارس يتصدى
+      // الحارس يتصدى (يرتمي إن لزم)
       if (ball.shot) {
         for (const t of teams) {
           const g = t.players[0];
           const ownX = t.attackRight ? 0 : L;
           if (ball.gkTried.has(g) || Math.sign(ball.vx) !== Math.sign(ownX - ball.x)) continue;
           const reach = 1.3 + g.attrs.keeping / 100 * 1.7;
-          if (dist(g, ball) < reach) {
+          const hd = dist(g, ball);
+          if (hd < reach && ball.z < 2.7) {
             ball.gkTried.add(g);
+            if (hd > 0.9 || ball.z > 1.6) { g.diveT = 0; g.diveDir = Math.sign((ball.y - g.y) * (t.attackRight ? 1 : -1)) || 1; }
             const sp = hyp(ball.vx, ball.vy);
             const pr = clamp(0.36 + g.attrs.keeping / 250 - (sp - 20) / 25 - (ball.shot.by.attrs.shooting - g.attrs.keeping) / 250, 0.1, 0.85);
             if (Math.random() < pr) {
               if (ball.shot.by.isUser) stats.shotsOn++;
-              if (sp < 23 && Math.random() < 0.6) { receive(g); g.holdT = rnd(0.8, 1.4); toast('تصدى الحارس', 900); }
+              if (sp < 23 && Math.random() < 0.6) { receive(g); g.holdT = rnd(0.9, 1.5); toast('تصدى الحارس', 900); }
               else {
-                ball.vx = -ball.vx * rnd(0.2, 0.4); ball.vy = rnd(-9, 9);
+                ball.vx = -ball.vx * rnd(0.2, 0.4); ball.vy = rnd(-9, 9); ball.vz = rnd(1, 4);
                 ball.shot = null; ball.lastTouch = g; ball.tried = new Set();
                 toast('أبعدها الحارس', 900);
               }
@@ -646,16 +761,19 @@
         }
       }
 
-      // أقرب لاعب يستلم الكرة
+      // استلام الكرة: بالقدم إذا كانت منخفضة، وبالرأس إذا كانت في مستوى الرأس
       const sp = hyp(ball.vx, ball.vy);
-      if (sp < 7) ball.tried.clear(); // كرة بطيئة: يحق للجميع محاولة استلامها من جديد
-      let best = null, bd = 1e9;
+      if (sp < 7 && ball.z < 0.5) ball.tried.clear(); // كرة بطيئة: يحق للجميع محاولة استلامها من جديد
+      let best = null, bd = 1e9, bestHead = null, bh = 1e9;
       for (const p of all) {
         if (p === ball.noTouch && ball.noTouchT > 0) continue;
         if (ball.tried.has(p)) continue;
         const d = dist(p, ball);
-        const reach = p.isGK && ax(teamOf(p), ball.x) < 17 ? 1.4 : 1.0;
-        if (d < reach && d < bd) { bd = d; best = p; }
+        const gkBox = p.isGK && ax(teamOf(p), ball.x) < 17;
+        if (ball.z < (gkBox ? 2.6 : 1.0)) {
+          const reach = gkBox ? 1.4 : 1.0;
+          if (d < reach && d < bd) { bd = d; best = p; }
+        } else if (ball.z < 2.6 && d < 0.9 && d < bh) { bh = d; bestHead = p; }
       }
       if (best) {
         let pr = 1;
@@ -664,6 +782,10 @@
         if (ball.shot && !best.isGK) pr = Math.min(pr, 0.35);
         if (Math.random() < pr) receive(best);
         else ball.tried.add(best);
+      } else if (bestHead) {
+        ball.tried.add(bestHead);
+        const intended = ball.pass && ball.pass.to === bestHead;
+        if (Math.random() < clamp(0.35 + bestHead.attrs.physical / 250 + (intended ? 0.2 : 0), 0.2, 0.9)) header(bestHead);
       }
     }
 
@@ -676,18 +798,19 @@
       let text = `هدف! ${t.name}`;
       if (scorer && scorer.isUser) { stats.goals++; stats.shotsOn++; text = `هدف! ${user.name} يسجل`; }
       if (scorer && ball.assist && ball.assist.by.team === teamIdx && ball.assist.by !== scorer && gameSec - ball.assist.t < 15) {
-        if (ball.assist.by.isUser) { stats.assists++; text += ` · تمريرة حاسمة منك`; }
+        if (ball.assist.by.isUser) { stats.assists++; text += ' · تمريرة حاسمة منك'; }
       }
+      for (const p of t.players) if (!p.isGK) p.celebT = 0;
       events.push({ min: minute(), team: teamIdx, user: !!(scorer && scorer.isUser) });
       $('m-s0').textContent = score[0]; $('m-s1').textContent = score[1];
-      toast(text, 2200);
+      toast(text, 2400);
       sound.goal(teamIdx === 0);
-      ball.owner = null; ball.vx *= 0.2; ball.vy *= 0.2; ball.shot = null;
-      phase = 'goal'; phaseT = 2.4; phaseNext = () => kickoff(1 - teamIdx);
+      ball.owner = null; ball.vx *= 0.15; ball.vy *= 0.15; ball.vz = 0; ball.z = Math.min(ball.z, 1); ball.shot = null;
+      phase = 'goal'; phaseT = 2.6; phaseNext = () => kickoff(1 - teamIdx);
     }
 
     function restart(teamIdx, x, y, label, gk) {
-      ball.owner = null; ball.vx = ball.vy = 0; ball.x = x; ball.y = y; ball.shot = null; ball.pass = null;
+      ball.owner = null; ball.vx = ball.vy = ball.vz = 0; ball.z = 0; ball.x = x; ball.y = y; ball.shot = null; ball.pass = null;
       const t = teams[teamIdx];
       let taker = t.players[0];
       if (!gk) {
@@ -715,24 +838,25 @@
       for (const t of teams) for (const p of t.players) {
         const fx = Math.min(p.base[0] * 0.95, 0.46);
         p.x = ax(t, fx * L); p.y = (p.base[1] * 0.84 + 0.08) * W; p.vx = p.vy = 0;
+        p.fx = t.attackRight ? 1 : -1; p.fy = 0; p.celebT = 9;
       }
       const t = teams[teamIdx];
       const kicker = t.players.find(p => p.slot === 'FC');
       kicker.x = L / 2 + (t.attackRight ? -0.8 : 0.8); kicker.y = W / 2;
-      ball.x = L / 2; ball.y = W / 2; ball.vx = ball.vy = 0;
+      ball.x = L / 2; ball.y = W / 2; ball.z = 0; ball.vx = ball.vy = ball.vz = 0;
       winBall(kicker, null);
       kicker.safeT = 2; kicker.decideT = kicker.isUser ? 99 : 0.8;
       phase = 'restart'; phaseT = kicker.isUser ? 99 : 1.2; phaseNext = null;
       sound.whistle(0.4);
+      if (kicker.isUser) toast('ضربة البداية: مرّر الكرة', 1500);
     }
 
     function simulateRest() {
       // يحاكي الدقائق المتبقية بحسب قوة الفريقين
       const remain = Math.max(0, 90 - minute()) / 90;
       const diff = (teams[0].strength - teams[1].strength) / 10;
-      const g0 = FC.Career.poisson(clamp(1.3 + diff * 0.6, 0.2, 4) * remain);
-      const g1 = FC.Career.poisson(clamp(1.2 - diff * 0.6, 0.2, 4) * remain);
-      score[0] += g0; score[1] += g1;
+      score[0] += FC.Career.poisson(clamp(1.3 + diff * 0.6, 0.2, 4) * remain);
+      score[1] += FC.Career.poisson(clamp(1.2 - diff * 0.6, 0.2, 4) * remain);
       finish();
     }
 
@@ -740,168 +864,37 @@
       if (ended) return;
       ended = true;
       sound.whistle(1);
-      cleanup();
       const minutesPlayed = Math.max(1, minute() - enteredAt);
       gameSec = 5400;
+      cleanup();
       opts.onEnd({ ours: score[0], theirs: score[1], stats, minutes: minutesPlayed, played: true, events });
     }
 
-    // ---------- الرسم ----------
-    let cw = 0, ch = 0, dpr = 1, camX = L / 2, camY = W / 2;
-    function resize() {
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
-      cw = canvas.clientWidth; ch = canvas.clientHeight;
-      canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
-      portrait = ch > cw * 1.05;
-    }
-    window.addEventListener('resize', resize);
-    resize();
-
-    function view() {
-      const s = portrait ? ch / 68 : cw / 56;
-      return { s, rot: portrait ? -Math.PI / 2 : 0 };
-    }
-    function toScreen(x, y) {
-      const { s } = view();
-      const dx = (x - camX) * s, dy = (y - camY) * s;
-      return portrait ? [cw / 2 + dy, ch / 2 - dx] : [cw / 2 + dx, ch / 2 + dy];
-    }
-
-    function draw() {
-      const { s, rot } = view();
-      const tx = user.x * 0.7 + ball.x * 0.3, ty = user.y * 0.7 + ball.y * 0.3;
-      camX += (tx - camX) * 0.08; camY += (ty - camY) * 0.08;
-      const halfLong = (portrait ? ch : cw) / 2 / s, halfShort = (portrait ? cw : ch) / 2 / s;
-      camX = clamp(camX, halfLong - 6, L - halfLong + 6);
-      camY = W < halfShort * 2 - 8 ? W / 2 : clamp(camY, halfShort - 4, W - halfShort + 4);
-
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.fillStyle = ground.b;
-      ctx.fillRect(0, 0, cw, ch);
-      ctx.save();
-      ctx.translate(cw / 2, ch / 2);
-      ctx.rotate(rot);
-      ctx.scale(s, s);
-      ctx.translate(-camX, -camY);
-
-      // العشب أو التراب
-      ctx.fillStyle = ground.a;
-      ctx.fillRect(-8, -8, L + 16, W + 16);
-      for (let i = 0; i < 20; i += 2) { ctx.fillStyle = ground.b; ctx.fillRect(i * L / 20, -8, L / 20, W + 16); }
-      if (ground.patch) {
-        ctx.fillStyle = ground.patch;
-        for (const [px, py, r] of PATCHES) { ctx.beginPath(); ctx.ellipse(px, py, r, r * 0.6, 0.4, 0, Math.PI * 2); ctx.fill(); }
-      }
-      ctx.strokeStyle = ground.line; ctx.lineWidth = 0.14;
-      ctx.strokeRect(0, 0, L, W);
-      ctx.beginPath(); ctx.moveTo(L / 2, 0); ctx.lineTo(L / 2, W); ctx.stroke();
-      ctx.beginPath(); ctx.arc(L / 2, W / 2, 9.15, 0, Math.PI * 2); ctx.stroke();
-      for (const side of [0, 1]) {
-        const x0 = side ? L - 16.5 : 0, x1 = side ? L - 5.5 : 0;
-        ctx.strokeRect(x0, W / 2 - 20.16, 16.5, 40.32);
-        ctx.strokeRect(x1, W / 2 - 9.16, 5.5, 18.32);
-        ctx.beginPath(); ctx.arc(side ? L - 11 : 11, W / 2, 0.25, 0, Math.PI * 2); ctx.fillStyle = ground.line; ctx.fill();
-        ctx.beginPath();
-        if (side) ctx.arc(L - 11, W / 2, 9.15, Math.PI - 0.93, Math.PI + 0.93);
-        else ctx.arc(11, W / 2, 9.15, -0.93, 0.93);
-        ctx.stroke();
-        // المرمى والشباك
-        const gx = side ? L : -2;
-        ctx.fillStyle = 'rgba(255,255,255,.18)';
-        ctx.fillRect(gx, W / 2 - GH, 2, GH * 2);
-        ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 0.05;
-        for (let k = 0; k <= 14; k++) { ctx.beginPath(); ctx.moveTo(gx, W / 2 - GH + k * GH / 7); ctx.lineTo(gx + 2, W / 2 - GH + k * GH / 7); ctx.stroke(); }
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.22;
-        ctx.strokeRect(gx, W / 2 - GH, 2, GH * 2);
-        ctx.strokeStyle = ground.line; ctx.lineWidth = 0.14;
-      }
-
-      // اللاعبون
-      for (const p of all) {
-        ctx.fillStyle = 'rgba(0,0,0,.25)';
-        ctx.beginPath(); ctx.ellipse(p.x + 0.25, p.y + 0.3, 0.8, 0.55, 0, 0, Math.PI * 2); ctx.fill();
-      }
-      for (const p of all) {
-        const t = teams[p.team];
-        const [c1, c2] = p.isGK ? (p.team === 0 ? ['#2d2d2d', '#f2b134'] : ['#f2d034', '#1b2a33']) : t.colors;
-        if (p.isUser) {
-          ctx.strokeStyle = '#ffc94a'; ctx.lineWidth = 0.22;
-          ctx.beginPath(); ctx.arc(p.x, p.y, 1.35, 0, Math.PI * 2); ctx.stroke();
-          if (p.callTimer > 0) {
-            ctx.strokeStyle = 'rgba(255,201,74,.5)';
-            ctx.beginPath(); ctx.arc(p.x, p.y, 1.8 + (p.callTimer % 0.5) * 2, 0, Math.PI * 2); ctx.stroke();
-          }
-        }
-        ctx.fillStyle = c1;
-        ctx.beginPath(); ctx.arc(p.x, p.y, 0.78, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = c2; ctx.lineWidth = 0.22; ctx.stroke();
-        // اتجاه الجسم
-        ctx.fillStyle = c2;
-        ctx.beginPath(); ctx.arc(p.x + p.fx * 0.55, p.y + p.fy * 0.55, 0.22, 0, Math.PI * 2); ctx.fill();
-      }
-      // الكرة
-      ctx.fillStyle = 'rgba(0,0,0,.3)';
-      ctx.beginPath(); ctx.arc(ball.x + 0.18, ball.y + 0.22, 0.32, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#fbfbf6';
-      ctx.beginPath(); ctx.arc(ball.x, ball.y, 0.34, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#222'; ctx.lineWidth = 0.06; ctx.stroke();
-      ctx.restore();
-
-      // الأرقام والسهم بإحداثيات الشاشة حتى لا تدور مع الملعب
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.font = `700 ${Math.max(9, s * 0.8)}px "Readex Pro", system-ui, sans-serif`;
-      for (const p of all) {
-        const [sx, sy] = toScreen(p.x, p.y);
-        if (sx < -20 || sy < -20 || sx > cw + 20 || sy > ch + 20) continue;
-        ctx.fillStyle = 'rgba(0,0,0,.55)';
-        ctx.fillText(p.number, sx, sy + 0.5);
-      }
-      const [ux, uy] = toScreen(user.x, user.y);
-      ctx.fillStyle = '#ffc94a';
-      ctx.beginPath(); ctx.moveTo(ux, uy - s * 1.6); ctx.lineTo(ux - 7, uy - s * 1.6 - 10); ctx.lineTo(ux + 7, uy - s * 1.6 - 10); ctx.closePath(); ctx.fill();
-      ctx.font = `600 12px "Readex Pro", system-ui, sans-serif`;
-      ctx.fillStyle = '#fff';
-      ctx.fillText(user.name, ux, uy - s * 1.6 - 20);
-
-      // شريط قوة التسديد
-      if (input.shoot && ball.owner === user) {
-        const pw = clamp((performance.now() - input.shoot.t) / 800, 0, 1);
-        ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(ux - 22, uy + s * 1.4, 44, 6);
-        ctx.fillStyle = pw > 0.96 ? '#e5533d' : '#ffc94a'; ctx.fillRect(ux - 22, uy + s * 1.4, 44 * pw, 6);
-      }
-      drawMini();
-    }
-
+    // ---------- الخريطة الصغيرة ----------
     function drawMini() {
-      const rotM = portrait;
-      if (rotM && mini.width !== 136) { mini.width = 136; mini.height = 210; }
-      if (!rotM && mini.width !== 210) { mini.width = 210; mini.height = 136; }
       const w = mini.width, h = mini.height;
-      mctx.setTransform(1, 0, 0, 1, 0, 0);
       mctx.clearRect(0, 0, w, h);
       mctx.fillStyle = 'rgba(14,32,24,.72)'; mctx.fillRect(0, 0, w, h);
       mctx.strokeStyle = 'rgba(255,255,255,.35)'; mctx.lineWidth = 1;
-      const m = (x, y) => rotM ? [y / W * w, h - x / L * h] : [x / L * w, y / W * h];
       mctx.strokeRect(2, 2, w - 4, h - 4);
-      const [a1, b1] = m(L / 2, 0), [a2, b2] = m(L / 2, W);
-      mctx.beginPath(); mctx.moveTo(a1, b1); mctx.lineTo(a2, b2); mctx.stroke();
+      mctx.beginPath(); mctx.moveTo(w / 2, 2); mctx.lineTo(w / 2, h - 2); mctx.stroke();
+      const m = (x, y) => [2 + x / L * (w - 4), 2 + y / W * (h - 4)];
       for (const p of all) {
         const [x, y] = m(p.x, p.y);
         mctx.fillStyle = p.isUser ? '#ffc94a' : teams[p.team].colors[0];
-        mctx.beginPath(); mctx.arc(x, y, p.isUser ? 4 : 3, 0, Math.PI * 2); mctx.fill();
+        mctx.beginPath(); mctx.arc(x, y, p.isUser ? 5 : 3.5, 0, Math.PI * 2); mctx.fill();
         if (!p.isUser) { mctx.strokeStyle = 'rgba(0,0,0,.5)'; mctx.stroke(); }
       }
       const [bx, by] = m(ball.x, ball.y);
-      mctx.fillStyle = '#fff'; mctx.beginPath(); mctx.arc(bx, by, 2.2, 0, Math.PI * 2); mctx.fill();
+      mctx.fillStyle = '#fff'; mctx.beginPath(); mctx.arc(bx, by, 2.6, 0, Math.PI * 2); mctx.fill();
     }
 
     // ---------- الحلقة الرئيسية ----------
-    let last = performance.now(), raf = 0;
-    let lblPass = '', lblShoot = '';
+    let last = performance.now(), raf = 0, lbl = '';
+    const btn = which => root.querySelector(`[data-b="${which}"]`);
     function frame(now) {
       raf = requestAnimationFrame(frame);
-      let dt = Math.min(0.05, (now - last) / 1000);
+      const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       if (paused || ended) return;
 
@@ -910,17 +903,17 @@
         if (half === 1 && gameSec >= 2700) {
           half = 2; gameSec = 2700;
           toast('نهاية الشوط الأول', 1800);
+          sound.whistle(0.6);
           phase = 'goal'; phaseT = 2; phaseNext = () => kickoff(1);
         } else if (gameSec >= 5400) { gameSec = 5400; finish(); return; }
       } else {
         phaseT -= dt;
         if (phaseT <= 0) {
-          if (phaseNext) { const f = phaseNext; phaseNext = null; f(); }
-          else phase = 'play';
+          if (phaseNext) { const f = phaseNext; phaseNext = null; f(); } else phase = 'play';
         }
       }
 
-      // الذكاء الاصطناعي يعمل دائماً، والكرة تتحرك فقط أثناء اللعب
+      if (!ball.owner) predictPath();
       if (phase === 'play' || phase === 'goal') {
         for (const t of teams) teamAI(t, dt);
       } else {
@@ -931,48 +924,56 @@
         }
       }
       userUpdate(dt);
-      if (phase === 'restart' && ball.owner === user) { user.vx = user.vy = 0; }
-      if (phase === 'restart' && ball.owner !== user) { for (const p of all) if (p === ball.owner) { p.vx = p.vy = 0; } }
+      if (phase === 'restart' && ball.owner) { ball.owner.vx = ball.owner.vy = 0; }
       if (phase === 'play' || phase === 'goal') physics(dt, phase === 'play');
-      else for (const p of all) { p.x += p.vx * dt; p.y += p.vy * dt; }
-      if (phase === 'restart' && ball.owner) { ball.x = ball.owner.x + ball.owner.fx * 0.75; ball.y = ball.owner.y + ball.owner.fy * 0.75; }
+      else {
+        for (const p of all) { p.x += p.vx * dt; p.y += p.vy * dt; p.kickT += dt; p.celebT += dt; p.slideT += dt; p.diveT += dt; p.headT += dt; }
+        if (ball.owner) { ball.x = ball.owner.x + ball.owner.fx * 0.7; ball.y = ball.owner.y + ball.owner.fy * 0.7; }
+      }
 
       $('m-clock').textContent = minute() + "'";
       $('m-stam').style.width = stamina + '%';
       const own = ball.owner === user;
-      const lp = own ? 'تمرير' : 'اطلب';
-      const ls = own ? 'تسديد' : 'افتك';
-      if (lp !== lblPass) { $('m-pass').textContent = lblPass = lp; }
-      if (ls !== lblShoot) { $('m-shoot').textContent = lblShoot = ls; }
-      draw();
+      const key = own ? 'own' : 'off';
+      if (key !== lbl) {
+        lbl = key;
+        btn('pass').textContent = own ? 'تمرير' : 'اطلب';
+        btn('through').textContent = own ? 'بينية' : 'اطلب بينية';
+        btn('shoot').textContent = own ? 'تسديد' : 'افتك';
+        btn('cross').textContent = own ? 'عرضية' : 'ضغط';
+        root.querySelector('.pad').classList.toggle('own', own);
+      }
+      view.frame({ user, ball }, dt);
+      drawMini();
     }
 
     // بداية المباراة
-    const homeEl = root.querySelector('.sc-home'), awayEl = root.querySelector('.sc-away');
-    homeEl.querySelector('.nm').textContent = teams[0].name;
-    homeEl.querySelector('.kit').style.background = teams[0].colors[0];
-    awayEl.querySelector('.nm').textContent = teams[1].name;
-    awayEl.querySelector('.kit').style.background = teams[1].colors[0];
+    const names = root.querySelectorAll('.sc-team');
+    names[0].querySelector('.nm').textContent = teams[0].name;
+    names[0].querySelector('.kit').style.background = teams[0].colors[0];
+    names[1].querySelector('.nm').textContent = teams[1].name;
+    names[1].querySelector('.kit').style.background = teams[1].colors[0];
     $('m-s0').textContent = score[0]; $('m-s1').textContent = score[1];
-    FC.Match.debug = { all, ball, teams, stats }; // للاختبار من وحدة التحكم
+    FC.Match.debug = { all, ball, teams, stats, input }; // للاختبار
     kickoff(opts.userIsHome ? 0 : 1);
     if (opts.startMinute) toast(`تدخل بديلاً في الدقيقة ${opts.startMinute}`, 2200);
-    else toast('صافرة البداية', 1200);
+    const onResize = () => view.resize();
+    window.addEventListener('resize', onResize);
     raf = requestAnimationFrame(frame);
+
+    // إيقاف تلقائي عند الخروج من التطبيق
+    const onHide = () => { if (document.hidden && !paused && !ended) togglePause(); };
+    document.addEventListener('visibilitychange', onHide);
 
     function cleanup() {
       cancelAnimationFrame(raf);
-      window.removeEventListener('keydown', kd);
-      window.removeEventListener('keyup', ku);
-      window.removeEventListener('resize', resize);
+      window.removeEventListener('resize', onResize);
+      document.removeEventListener('visibilitychange', onHide);
+      view.dispose();
     }
 
     return { stop: () => { ended = true; cleanup(); } };
   }
-
-  // بقع ثابتة في الملاعب الترابية والبلدية
-  const PATCHES = [];
-  for (let i = 0; i < 70; i++) PATCHES.push([Math.random() * L, Math.random() * W, 0.4 + Math.random() * 1.6]);
 
   FC.Match = { start };
 })();

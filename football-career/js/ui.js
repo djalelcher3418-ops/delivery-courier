@@ -13,7 +13,16 @@
     window.scrollTo(0, 0);
     if (after) after(app());
   }
-  const on = (root, sel, fn) => root.querySelectorAll(sel).forEach(el => el.addEventListener('click', e => { FC.Sound.unlock(); fn(el, e); }));
+  const on = (root, sel, fn) => root.querySelectorAll(sel).forEach(el => el.addEventListener('click', e => { FC.Sound.unlock(); goFullscreen(); fn(el, e); }));
+
+  // ملء الشاشة وتثبيت الوضع الأفقي (يعمل في متصفح الهاتف وفي التطبيق لاحقاً)
+  function goFullscreen() {
+    const d = document.documentElement;
+    if (document.fullscreenElement || !d.requestFullscreen) return;
+    d.requestFullscreen({ navigationUI: 'hide' })
+      .then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'))
+      .catch(() => { /* غير مسموح هنا: لا بأس */ });
+  }
 
   const UI = {
     // ---------- شاشة البداية ----------
@@ -252,12 +261,16 @@
             <div class="seg">${[3, 5, 8, 12].map(m => `<button data-m="${m}" class="${st.matchMinutes === m ? 'on' : ''}">${m} دقائق</button>`).join('')}</div>
           </section>
           <section class="panel">
+            <h3>الكاميرا</h3>
+            <div class="seg">${[[0.8, 'قريبة'], [1, 'عادية'], [1.25, 'بعيدة']].map(([z, n]) => `<button data-z="${z}" class="${(st.zoom || 1) === z ? 'on' : ''}">${n}</button>`).join('')}</div>
+          </section>
+          <section class="panel">
             <h3>التحكم</h3>
             <ul class="help">
-              <li><b>الهاتف:</b> المس النصف الأيسر من الشاشة وحرّك إصبعك للحركة. الأزرار على اليمين: تمرير، تسديد، ركض.</li>
-              <li><b>الحاسوب:</b> الأسهم للحركة، X تمرير، C أو المسافة تسديد، Shift ركض، P إيقاف مؤقت.</li>
-              <li><b>بدون كرة:</b> زر التمرير يطلب الكرة من زميلك، وزر التسديد يفتك الكرة من الخصم القريب.</li>
-              <li><b>بالكرة:</b> اضغط مطولاً على التمرير لتمريرة بينية أمام زميلك، وعلى التسديد لقوة أكبر. القوة الزائدة (الشريط أحمر) تقلل الدقة. اتجاه الحركة لحظة التسديد يحدد الزاوية.</li>
+              <li><b>الحركة:</b> المس يسار الشاشة واسحب إصبعك. العصا تظهر حيث تلمس.</li>
+              <li><b>بالكرة:</b> تمرير أرضي، بينية أمام زميلك، عرضية عالية، وتسديد (اضغط مطولاً لقوة أكبر، والقوة الزائدة تطير فوق العارضة). اتجاه العصا يختار الزميل أو زاوية التسديد.</li>
+              <li><b>بدون كرة:</b> «اطلب» ليمرر لك زميلك، «اطلب بينية» لتنطلق خلف الدفاع، «افتك» لأخذ الكرة، واضغط مطولاً على «ضغط» ليركض لاعبك نحو الكرة.</li>
+              <li><b>ركض:</b> اضغط مطولاً، واللياقة تنقص.</li>
             </ul>
           </section>
           <section class="panel danger">
@@ -267,6 +280,7 @@
         </main>`, root => {
         on(root, '[data-a=back]', () => UI.hub());
         on(root, '[data-m]', el => { C.state.settings.matchMinutes = +el.dataset.m; C.save(); UI.settings(); });
+        on(root, '[data-z]', el => { C.state.settings.zoom = +el.dataset.z; C.save(); UI.settings(); });
         on(root, '[data-a=reset]', () => UI.confirm('حذف المسيرة نهائياً؟', 'احذف', () => { C.reset(); UI.title(); }));
       });
     },
@@ -292,9 +306,10 @@
           <section class="panel">
             <h3>تذكير بالتحكم</h3>
             <ul class="help">
-              <li>الهاتف: المس يسار الشاشة للحركة، والأزرار يميناً. أدِر الهاتف أفقياً لترى الملعب أوسع.</li>
-              <li>الحاسوب: الأسهم، X تمرير، C تسديد، Shift ركض.</li>
-              <li>بدون كرة: «اطلب» ليمرر لك زميلك، و«افتك» لأخذ الكرة من الخصم.</li>
+              <li><b>الحركة:</b> المس يسار الشاشة واسحب إصبعك. العصا تظهر حيث تلمس.</li>
+              <li><b>بالكرة:</b> تمرير أرضي، بينية أمام زميلك، عرضية عالية، وتسديد (اضغط مطولاً لقوة أكبر، والقوة الزائدة تطير فوق العارضة). اتجاه العصا يختار الزميل أو زاوية التسديد.</li>
+              <li><b>بدون كرة:</b> «اطلب» ليمرر لك زميلك، «اطلب بينية» لتنطلق خلف الدفاع، «افتك» لأخذ الكرة، واضغط مطولاً على «ضغط» ليركض لاعبك نحو الكرة.</li>
+              <li><b>ركض:</b> اضغط مطولاً، واللياقة تنقص.</li>
             </ul>
           </section>
         </main>`, root => {
@@ -330,6 +345,8 @@
         startMinute, startScore,
         energy: s.energy,
         tier: s.tier,
+        zoom: C.settings().zoom || 1,
+        onZoom: z => { s.settings.zoom = z; C.save(); },
         onEnd: res => {
           document.body.classList.remove('in-match');
           match = null;
