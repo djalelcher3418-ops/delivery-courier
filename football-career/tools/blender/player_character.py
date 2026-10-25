@@ -487,6 +487,10 @@ def build():
         me.materials.append(m)
     player = bpy.data.objects.new('Player', me)
     bpy.context.scene.collection.objects.link(player)
+    # يقرؤها سكربت تحسين الوجه (player_face.py) ليضع الرأس الجديد في المكان نفسه
+    player['head_center'] = HEAD_C
+    player['scale'] = S
+    player['floor_z'] = floor_z
 
     arm = build_armature(player, head_verts, floor_z)
 
