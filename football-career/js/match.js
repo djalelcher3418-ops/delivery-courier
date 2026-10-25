@@ -51,6 +51,7 @@
           <div class="stam"><span>لياقتك</span><i><b id="m-stam"></b></i></div>
         </div>
         <div class="toast" id="m-toast" hidden></div>
+        <div class="power" id="m-power" hidden><b></b></div>
         <div class="ctrl">
           <div class="joy-zone" id="m-joy"><div class="joy rest"><i></i></div></div>
           <div class="pad">
@@ -88,7 +89,8 @@
           team: t.index, slot: sp.slot, base: BASE[sp.slot], number: sp.number, name: sp.name, attrs: sp.attrs,
           x: 0, y: 0, vx: 0, vy: 0, fx: t.attackRight ? 1 : -1, fy: 0,
           isGK: sp.slot === 'GK', isUser: false, tackleCd: 0, decideT: 0, safeT: 0, stunT: 0, holdT: 0, callTimer: 0, callThrough: false,
-          kickT: 9, headT: 9, slideT: 9, diveT: 9, diveDir: 1, celebT: 9,
+          kickT: 9, kickPrep: 0.15, kickPow: 0.6, kickKind: 'pass', headT: 9, slideT: 9, diveT: 9, diveX: 0, diveY: 0, celebT: 9,
+          touchT: 9, touchCd: 0, touchN: 0, stealCd: 0, pending: null, faceT: null, turnRate: 0, buffer: null,
         };
         if (t.index === 0 && sp.slot === userSlot) {
           p.isUser = true; p.attrs = opts.user.attrs; p.number = opts.user.number; p.name = opts.user.name;
@@ -171,22 +173,49 @@
       b.addEventListener('contextmenu', e => e.preventDefault());
     });
 
+    // الكرة قادمة إليك؟ عندها يُحفظ الضغط وينفَّذ لمسة واحدة لحظة وصولها
+    function ballIncoming() {
+      if (ball.owner) return false;
+      if (ball.pass && ball.pass.to === user) return true;
+      const dx = user.x - ball.x, dy = user.y - ball.y, d = hyp(dx, dy);
+      return d < 7 && (ball.vx * dx + ball.vy * dy) > 0 && ball.z < 2.4;
+    }
+    const shotPower = held => clamp(held / 0.9, 0.25, 1.15);
+
     function buttonDown(which) {
       if (paused || ended) return;
       if (which === 'sprint') { input.sprint = true; return; }
       input.held[which] = performance.now();
       const own = ball.owner === user;
-      if (which === 'pass') own ? userPass(false) : callForBall(false);
-      else if (which === 'through') own ? userPass(true) : callForBall(true);
-      else if (which === 'cross' && own) userCross();
-      else if (which === 'shoot' && !own) userTackle();
+      const incoming = !own && ballIncoming();
+      if (which === 'pass') own ? userPass(false) : incoming ? bufferAction('pass') : callForBall(false);
+      else if (which === 'through') own ? userPass(true) : incoming ? bufferAction('through') : callForBall(true);
+      else if (which === 'cross') { if (own) userCross(); else if (incoming) bufferAction('cross'); }
+      else if (which === 'shoot' && !own && !incoming) userTackle();
     }
     function buttonUp(which) {
       if (which === 'sprint') { input.sprint = false; return; }
       const t0 = input.held[which];
       delete input.held[which];
       if (paused || ended || t0 == null) return;
-      if (which === 'shoot' && ball.owner === user) userShoot((performance.now() - t0) / 1000);
+      if (which !== 'shoot') return;
+      const power = shotPower((performance.now() - t0) / 1000);
+      if (ball.owner === user) userShoot(power);
+      else if (ballIncoming() || (user.buffer && user.buffer.which === 'shoot')) bufferAction('shoot', power);
+    }
+    // يبقى الضغط محفوظاً حتى تصل الكرة (أو تُقطع في الطريق)
+    function bufferAction(which, power) {
+      const iv = inputVector();
+      const dir = iv.m ? { x: iv.x, y: iv.y } : (user.buffer && user.buffer.dir) || null;
+      user.buffer = { which, power, t: 2.5, dir };
+    }
+    function runBuffered() {
+      const b = user.buffer;
+      user.buffer = null;
+      if (b.which === 'pass') userPass(false, true, b.dir);
+      else if (b.which === 'through') userPass(true, true, b.dir);
+      else if (b.which === 'cross') userCross(true, b.dir);
+      else userShoot(b.power, true, b.dir);
     }
 
     $('m-pause').addEventListener('click', togglePause);
@@ -262,9 +291,17 @@
       ball.pass = kind === 'pass' ? { by: p, to: target } : null;
       ball.shot = kind === 'shot' ? { by: p } : null;
       p.decideT = 0.4;
-      p.kickT = 0;
+      p.pending = null;
       sound.kick(kind === 'shot' ? 1 : 0.6);
     }
+
+    // كل ركلة تبدأ بتحضير قصير (رجوع القدم) ثم تُضرب الكرة لحظة التلامس
+    function act(p, kind, prep, power, fn) {
+      p.pending = { fn, t: prep, wait: 0 };
+      p.kickT = 0; p.kickPrep = prep; p.kickKind = kind; p.kickPow = power;
+    }
+    const footPoint = p => [p.x + p.fx * 0.45, p.y + p.fy * 0.45];
+    function reachBall(p) { const [fx, fy] = footPoint(p); return hyp(ball.x - fx, ball.y - fy); }
 
     function passTo(p, r, through) {
       let tx = r.x, ty = r.y;
@@ -273,10 +310,13 @@
       const t = d0 / (speed * 0.75);
       tx += r.vx * t; ty += r.vy * t;
       if (through) {
-        tx += (teamOf(r).attackRight ? 1 : -1) * 6;
+        // البينية أمام الزميل في اتجاه ركضه، أو نحو المرمى إن كان واقفاً
+        const rs = hyp(r.vx, r.vy);
+        const [lx, ly] = rs > 3 ? [r.vx / rs, r.vy / rs] : [teamOf(r).attackRight ? 1 : -1, 0];
+        tx += lx * 7; ty += ly * 7;
         speed = clamp(speed + 2, 12, 28);
       }
-      const err = (100 - p.attrs.passing) / 100 * 0.14 * gauss() * (p.stunT > 0 ? 2 : 1);
+      const err = (100 - p.attrs.passing) / 100 * 0.14 * gauss() * (p.stunT > 0 ? 2 : 1) * (p.isUser ? 0.55 : 1);
       const ang = Math.atan2(ty - ball.y, tx - ball.x) + err;
       const d = hyp(tx - ball.x, ty - ball.y);
       kick(p, ball.x + Math.cos(ang) * d, ball.y + Math.sin(ang) * d, speed, 'pass', r);
@@ -300,24 +340,26 @@
     }
     const isBoxTarget = (t, q) => ax(t, q.x) > L - 20 && Math.abs(q.y - W / 2) < 16;
 
+    // power من 0.25 إلى 1.15؛ فوق 1 = قوة زائدة تطير غالباً فوق العارضة
     function shoot(p, aimY, power) {
       const t = teamOf(p);
       const gx = goalX(t);
-      const speed = 17 + power * 15;
+      const over = Math.max(0, power - 1) / 0.15;
+      const speed = 17 + Math.min(1, power) * 15;
       const distG = Math.abs(gx - ball.x);
-      const sk = (100 - p.attrs.shooting) / 100;
-      const err = (0.035 + sk * 0.11 + (power > 0.96 ? 0.06 : 0) + distG / 900) * gauss();
+      const sk = (100 - p.attrs.shooting) / 100 * (p.isUser ? 0.8 : 1);
+      const err = (0.03 + sk * 0.1 + over * 0.05 + distG / 1000) * gauss();
       const ang = Math.atan2(aimY - ball.y, gx - ball.x) + err;
-      // الارتفاع: التسديدة القوية جداً قد تطير فوق العارضة
-      const vz = 1 + power * 2.6 + gauss() * (0.8 + sk * 2.4) + (power > 0.96 ? 2.2 : 0);
+      const vz = 1.5 + Math.min(1, power) * 2.6 + gauss() * (0.4 + sk * 1.2) + over * 3.4;
       kick(p, ball.x + Math.cos(ang) * 50, ball.y + Math.sin(ang) * 50, speed, 'shot', null, Math.max(0, vz));
       if (p.isUser) stats.shots++;
     }
 
     // ---------- تحكم المستخدم ----------
-    function pickTeammate(filter) {
+    // اختيار الزميل في اتجاه العصا (أو الاتجاه المحفوظ لحظة الضغط في اللمسة الواحدة)
+    function pickTeammate(filter, dir) {
       const iv = inputVector();
-      const dx = iv.m ? iv.x : user.fx, dy = iv.m ? iv.y : user.fy;
+      const dx = dir ? dir.x : iv.m ? iv.x : user.fx, dy = dir ? dir.y : iv.m ? iv.y : user.fy;
       let best = null, bestS = -1e9;
       for (const q of teams[0].players) {
         if (q === user || (filter && !filter(q))) continue;
@@ -333,25 +375,31 @@
 
     function startPlay() { if (phase === 'restart') phase = 'play'; }
 
-    function userPass(through) {
+    function userPass(through, oneTouch, dir) {
       if (phase !== 'play' && phase !== 'restart') return;
-      const r = pickTeammate();
-      if (r) { passTo(user, r, through); startPlay(); }
+      const r = pickTeammate(null, dir);
+      if (!r) return;
+      act(user, 'pass', oneTouch ? 0.06 : 0.13, 0.6, () => passTo(user, r, through));
+      startPlay();
     }
 
-    function userCross() {
+    function userCross(oneTouch, dir) {
       if (phase !== 'play' && phase !== 'restart') return;
       // العرضية تبحث أولاً عن زميل داخل منطقة الجزاء
       const inBox = q => q.x > L - 20 && Math.abs(q.y - W / 2) < 22;
-      const r = (ball.x > L - 35 && pickTeammate(inBox)) || pickTeammate();
-      if (r) { loftTo(user, r, isBoxTarget(teams[0], r) ? 1.7 : 0.3); startPlay(); }
+      const r = (ball.x > L - 35 && pickTeammate(inBox, dir)) || pickTeammate(null, dir);
+      if (!r) return;
+      act(user, 'loft', oneTouch ? 0.08 : 0.18, 0.8, () => loftTo(user, r, isBoxTarget(teams[0], r) ? 1.7 : 0.3));
+      startPlay();
     }
 
-    function userShoot(held) {
+    function userShoot(power, oneTouch, dir) {
       if (phase !== 'play' && phase !== 'restart') return;
-      const iv = inputVector();
-      const side = clamp(iv.y * 1.6, -1, 1); // الاتجاه الجانبي يختار الزاوية
-      shoot(user, W / 2 + side * (GH - 0.6), clamp(held / 0.8, 0.3, 1));
+      const iv = dir ? { x: dir.x, y: dir.y, m: 1 } : inputVector();
+      // بدون توجيه جانبي: التسديدة نحو القائم البعيد عن الحارس
+      const gk = teams[1].players[0];
+      const side = Math.abs(iv.y) > 0.25 ? clamp(iv.y * 1.6, -1, 1) : (gk.y < W / 2 ? 0.85 : -0.85);
+      act(user, 'shot', oneTouch ? 0.07 : 0.12 + Math.min(1, power) * 0.1, Math.min(1, power), () => shoot(user, W / 2 + side * (GH - 0.6), power));
       startPlay();
     }
 
@@ -383,8 +431,11 @@
 
     function winBall(p, from) {
       ball.owner = p; ball.lastTouch = p; ball.pass = null; ball.shot = null;
-      ball.z = 0; ball.vz = 0;
-      p.safeT = 0.6; p.decideT = 0.25;
+      ball.z = p.isGK ? ball.z : 0; ball.vz = 0;
+      const [fx, fy] = footPoint(p);
+      if (!p.isGK || !ball.z) { ball.x = fx; ball.y = fy; }
+      ball.vx = p.vx; ball.vy = p.vy;
+      p.safeT = 0.6; p.decideT = 0.25; p.touchCd = 0.15; p.pending = null;
       if (from) { from.stunT = 0.5; if (from.isUser) stats.lost++; }
     }
 
@@ -402,8 +453,20 @@
         ball.assist = null;
       }
       if (p.isUser) p.callTimer = 0;
+      const sp = hyp(ball.vx, ball.vy), high = ball.z > 0.3;
+      const ivx = ball.vx, ivy = ball.vy;
       winBall(p, null);
-      if (p.isGK) p.holdT = rnd(0.7, 1.2);
+      if (p.isGK) { p.holdT = rnd(0.7, 1.2); ball.z = 1.0; return; }
+      if (p.isUser && user.buffer && user.buffer.t > 0) { runBuffered(); return; } // لمسة واحدة
+      // اللمسة الأولى: كرة سريعة أو عالية مع تحكم ضعيف ترتد بعيداً عن القدم
+      const ctrl = p.attrs.dribbling / 100 * (p.isUser ? 1.2 : 1);
+      const bad = Math.random() < clamp((sp - 9) / 35 + (0.6 - ctrl) * 0.5 + (high ? 0.12 : 0), 0, 0.45);
+      if (bad) {
+        const a = Math.atan2(ivy, ivx) + rnd(-1.2, 1.2);
+        const v = rnd(3, 6);
+        ball.vx = p.vx + Math.cos(a) * v; ball.vy = p.vy + Math.sin(a) * v;
+        p.touchCd = 0.35; p.touchT = 0;
+      }
     }
 
     // ضربة رأسية: تسديد قرب المرمى، إبعاد قرب مرماك، أو تمريرة
@@ -461,9 +524,25 @@
       const d = hyp(dx, dy);
       let sp = maxSpd(p) * urgency;
       if (d < 3) sp *= d / 3;
-      const dvx = d > 0.05 ? dx / d * sp : 0, dvy = d > 0.05 ? dy / d * sp : 0;
-      const a = Math.min(1, dt * 5);
-      p.vx += (dvx - p.vx) * a; p.vy += (dvy - p.vy) * a;
+      steer(p, d > 0.05 ? dx / d * sp : 0, d > 0.05 ? dy / d * sp : 0, dt);
+    }
+
+    // حركة واقعية: تسارع تدريجي، ودوران أبطأ كلما زادت السرعة، وفرملة قبل الالتفاف الحاد
+    function steer(p, dvx, dvy, dt) {
+      const ds = hyp(dvx, dvy), cs = hyp(p.vx, p.vy);
+      const ch = cs > 0.3 ? Math.atan2(p.vy, p.vx) : Math.atan2(dvy, dvx);
+      const dh = ds > 0.05 ? Math.atan2(dvy, dvx) : ch;
+      const diff = Math.atan2(Math.sin(dh - ch), Math.cos(dh - ch));
+      const agile = 0.8 + (p.attrs.dribbling + p.attrs.pace) / 500;
+      const maxTurn = Math.max(2.4, 10 - cs * 0.95) * agile * dt;
+      let target = ds;
+      if (Math.abs(diff) > 1.7 && cs > 2.5) target = Math.min(target, cs * 0.25);
+      const turn = clamp(diff, -maxTurn, maxTurn);
+      const h = ch + turn;
+      const acc = target > cs ? 3.6 + p.attrs.pace * 0.03 : 10;
+      const ns = Math.max(0, cs + clamp(target - cs, -acc * dt, acc * dt));
+      p.vx = Math.cos(h) * ns; p.vy = Math.sin(h) * ns;
+      p.turnRate = dt > 0 ? turn / dt : 0;
     }
 
     function nearestOpp(p) {
@@ -487,7 +566,7 @@
         for (const o of opps) open = Math.min(open, segDist(o.x, o.y, p.x, p.y, r.x, r.y) * 1.2, dist(o, r));
         if (open < 1.6) continue;
         const prog = ax(t, r.x) - ax(t, p.x);
-        let s = prog * (prog > 0 ? 0.6 : 1) + Math.min(open, 6) * 1.5 - d * 0.1;
+        let s = prog * (prog > 0 ? 0.6 : 1) + Math.min(open, 6) * 1.5 - d * 0.1 - Math.max(0, 2.6 - open) * 6;
         if (r.isGK) s -= 25;
         if (ball.assist && ball.assist.by === r && gameSec - ball.assist.t < 20) s -= 14; // لا ترجعها لمن مررها لك
         if (r.isUser) s += 5 + (r.callTimer > 0 ? 25 : 0);
@@ -508,24 +587,27 @@
       if (p.isGK) {
         p.holdT -= dt;
         moveToward(p, p.x, p.y, 0, dt);
-        if (p.holdT > 0) return;
+        if (p.holdT > 0 || p.pending) return;
         const bp = bestPass(p);
-        if (bp && bp.s > -5) passTo(p, bp.r, false);
+        if (bp && bp.s > -5) act(p, 'pass', 0.25, 0.6, () => passTo(p, bp.r, false));
         else {
           const far = t.players.filter(q => q.slot[0] === 'F').sort(() => Math.random() - 0.5)[0];
-          loftTo(p, far);
+          act(p, 'loft', 0.3, 1, () => loftTo(p, far));
         }
         return;
       }
+      if (p.pending) { moveToward(p, ball.x, ball.y, 0.35, dt); return; }
       if (p.decideT <= 0) {
         p.decideT = rnd(0.25, 0.5);
         const dG = hyp(gx - p.x, W / 2 - p.y);
         const wide = Math.abs(p.y - W / 2);
-        if (dG < 28 && wide < 20) {
-          let pr = dG < 12 ? 0.8 : dG < 18 ? 0.5 : dG < 24 ? 0.22 : 0.08;
-          if (od < 2.5) pr += 0.15;
+        if (dG < 30 && wide < 20) {
+          let pr = dG < 12 ? 0.85 : dG < 18 ? 0.55 : dG < 24 ? 0.28 : 0.12;
+          if (od < 2.5) pr += 0.2;
           if (Math.random() < pr) {
-            shoot(p, W / 2 + (Math.random() < 0.5 ? -1 : 1) * rnd(1, GH - 0.5), rnd(0.55, 0.95));
+            const pw = rnd(0.55, 1);
+            const aim = W / 2 + (Math.random() < 0.5 ? -1 : 1) * rnd(1, GH - 0.5);
+            act(p, 'shot', 0.18 + pw * 0.08, pw, () => shoot(p, aim, pw));
             return;
           }
         }
@@ -539,17 +621,18 @@
         const bp = bestPass(p);
         const isDef = p.slot[0] === 'D';
         const calling = bp && bp.r.isUser && bp.r.callTimer > 0;
-        if (calling) { passTo(p, bp.r, user.callThrough); return; }
+        if (calling) { const th = user.callThrough; act(p, 'pass', 0.14, 0.6, () => passTo(p, user, th)); return; }
         // قرب خط المرمى على الجناح: عرضية عالية نحو المنطقة
         if (ax(t, p.x) > L - 22 && wide > 12) {
           const targets = t.players.filter(q => q !== p && ax(t, q.x) > L - 20 && Math.abs(q.y - W / 2) < 14);
-          if (targets.length && Math.random() < 0.7) { loftTo(p, targets[Math.floor(Math.random() * targets.length)], 1.7); return; }
-          if (bp && bp.s > -12) { passTo(p, bp.r, false); return; }
+          if (targets.length && Math.random() < 0.7) { const r = targets[Math.floor(Math.random() * targets.length)]; act(p, 'loft', 0.2, 0.8, () => loftTo(p, r, 1.7)); return; }
+          if (bp && bp.s > -12) { const r = bp.r; act(p, 'pass', 0.14, 0.6, () => passTo(p, r, false)); return; }
         }
         const space = ahead > 7 && !(isDef && ax(t, p.x) < 30);
         const takeOn = !isDef && Math.random() < p.attrs.dribbling / 260;
         if (bp && ((!takeOn && ((od < 3 && bp.s > 0) || (!space && bp.s > (isDef ? 2 : 6)))) || bp.s > 22)) {
-          passTo(p, bp.r, bp.r.slot[0] === 'F' && Math.random() < 0.35);
+          const r = bp.r, th = r.slot[0] === 'F' && Math.random() < 0.35;
+          act(p, 'pass', 0.14, 0.6, () => passTo(p, r, th));
           return;
         }
       }
@@ -587,7 +670,10 @@
         }
         if (chasers.includes(p)) {
           const [tx, ty] = interceptPoint(p);
-          moveToward(p, tx, ty, 0.97, dt);
+          const dOwn = owner ? dist(p, owner) : 99;
+          // قرب حامل الكرة: يتريّث ويواجهه (jockey) ثم يتدخل
+          if (owner && dOwn < 4 && dOwn > 1.4 && p.tackleCd > 0.2) { moveToward(p, tx, ty, 0.5, dt); p.faceT = owner; }
+          else moveToward(p, tx, ty, 0.97, dt);
           if (owner && owner.team !== p.team) tryTackle(p, owner);
           continue;
         }
@@ -643,8 +729,15 @@
     function userUpdate(dt) {
       let iv = inputVector();
       const own = ball.owner === user;
+      // الكرة قادمة إليك وضغطت زراً، أو لم تلمس العصا: يتقدم لاعبك تلقائياً لاستلامها
+      const toMe = !own && !ball.owner && ((ball.pass && ball.pass.to === user) || (user.buffer && ballIncoming()));
+      if (toMe && (user.buffer || iv.m === 0)) {
+        const [tx, ty] = interceptPoint(user, 1.1);
+        const d = hyp(tx - user.x, ty - user.y);
+        iv = d > 0.4 ? { x: (tx - user.x) / d, y: (ty - user.y) / d, m: Math.min(1, d / 2) } : { x: 0, y: 0, m: 0 };
+      }
       // زر العرضية بدون كرة = ضغط: يركض لاعبك تلقائياً نحو الكرة
-      if (!own && input.held.cross != null && iv.m === 0) {
+      else if (!own && input.held.cross != null && iv.m === 0) {
         const [tx, ty] = interceptPoint(user);
         const d = hyp(tx - user.x, ty - user.y);
         if (d > 0.5) iv = { x: (tx - user.x) / d, y: (ty - user.y) / d, m: 1 };
@@ -652,11 +745,12 @@
       const canSprint = stamina > 12 && input.sprint;
       let sp = maxSpd(user) * (canSprint ? 1.05 : 0.8) * (own ? 0.92 : 1) * (0.75 + stamina / 400);
       if (user.stunT > 0) sp *= 0.5;
+      if (user.pending) sp *= 0.6; // يبطئ لحظة ضرب الكرة
       if (user.slideT < 0.45) { user.vx *= 0.95; user.vy *= 0.95; }
-      else {
-        const a = Math.min(1, dt * (own ? 7 : 9));
-        user.vx += (iv.x * sp * iv.m - user.vx) * a;
-        user.vy += (iv.y * sp * iv.m - user.vy) * a;
+      else steer(user, iv.x * sp * iv.m, iv.y * sp * iv.m, dt);
+      if (user.buffer) {
+        user.buffer.t -= dt;
+        if (user.buffer.t <= 0 || (ball.owner && ball.owner !== user)) user.buffer = null;
       }
       const moving = hyp(user.vx, user.vy) > 2;
       if (canSprint && iv.m > 0.3) {
@@ -668,15 +762,61 @@
       user.callTimer = Math.max(0, user.callTimer - dt);
     }
 
+    // المراوغة الواقعية: اللاعب يدفع الكرة أمامه بلمسات، قصيرة عند الجري الخفيف وطويلة عند الركض السريع
+    function dribble(o, dt) {
+      o.touchCd -= dt;
+      const s = hyp(o.vx, o.vy);
+      const [fx, fy] = footPoint(o);
+      const r = hyp(ball.x - fx, ball.y - fy);
+      const ctrl = o.attrs.dribbling / 100;
+      if (o.pending) return;
+      if (s < 1.3) {
+        // شبه واقف: يُبقي الكرة عند قدمه
+        if (r < 1.3 && ball.z < 0.3) {
+          const k = Math.min(1, dt * 6);
+          ball.vx += ((fx - ball.x) * 4 + o.vx - ball.vx) * k;
+          ball.vy += ((fy - ball.y) * 4 + o.vy - ball.vy) * k;
+        }
+        return;
+      }
+      if (o.touchCd > 0 || r > 0.8 + s * 0.04 || ball.z > 0.4) {
+        // مساعدة خفيفة: الكرة الجانبية تُسحب نحو مسار اللاعب حتى لا يفقدها عند كل التفاف
+        if (r < 1.8 && ball.z < 0.3) {
+          const k = Math.min(1, dt * 2.5 * ctrl);
+          ball.x += (fx - ball.x) * k * 0.5; ball.y += (fy - ball.y) * k * 0.5;
+        }
+        return;
+      }
+      const sprint = o.isUser ? (input.sprint && stamina > 12) : s > maxSpd(o) * 0.88;
+      const push = (sprint ? 5.2 : 1.7) * (1.3 - ctrl * 0.6);
+      const hx = o.vx / s, hy = o.vy / s;
+      const noise = (1 - ctrl) * (sprint ? 0.9 : 0.4);
+      ball.vx = hx * (s + push) + gauss() * noise;
+      ball.vy = hy * (s + push) + gauss() * noise;
+      ball.vz = 0;
+      o.touchCd = sprint ? 0.45 : 0.28;
+      o.touchT = 0; o.touchN++;
+      ball.lastTouch = o;
+    }
+
     // ---------- الفيزياء ----------
     function physics(dt, ballLive) {
       for (const p of all) {
         p.tackleCd -= dt; p.safeT -= dt; p.stunT -= dt;
-        p.kickT += dt; p.headT += dt; p.slideT += dt; p.diveT += dt; p.celebT += dt;
+        p.kickT += dt; p.headT += dt; p.slideT += dt; p.diveT += dt; p.celebT += dt; p.touchT += dt; p.stealCd -= dt;
         p.x = clamp(p.x + p.vx * dt, -3, L + 3);
         p.y = clamp(p.y + p.vy * dt, -3, W + 3);
         const s = hyp(p.vx, p.vy);
-        if (s > 0.6 && p.slideT > 0.5 && p.diveT > 0.9) { p.fx = p.vx / s; p.fy = p.vy / s; }
+        if (p.slideT > 0.5 && p.diveT > 0.9) {
+          let tfx = p.fx, tfy = p.fy;
+          if (p.faceT) { const d = dist(p, p.faceT) || 1; tfx = (p.faceT.x - p.x) / d; tfy = (p.faceT.y - p.y) / d; }
+          else if (p.pending && ball.owner === p) { const d = dist(p, ball) || 1; tfx = (ball.x - p.x) / d; tfy = (ball.y - p.y) / d; }
+          else if (s > 0.6) { tfx = p.vx / s; tfy = p.vy / s; }
+          const k = Math.min(1, dt * 14);
+          const nx = p.fx + (tfx - p.fx) * k, ny = p.fy + (tfy - p.fy) * k, nl = hyp(nx, ny) || 1;
+          p.fx = nx / nl; p.fy = ny / nl;
+        }
+        p.faceT = null;
       }
       // منع التداخل بين اللاعبين
       for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
@@ -689,19 +829,28 @@
       }
 
       if (!ballLive) return;
-      let px = ball.x, py = ball.y, pz = ball.z;
-      if (ball.owner) {
-        const o = ball.owner;
-        ball.x = o.x + o.fx * 0.7; ball.y = o.y + o.fy * 0.7; ball.z = 0;
-        ball.vx = o.vx; ball.vy = o.vy;
-        if (ball.x >= 0 && ball.x <= L && ball.y >= 0 && ball.y <= W) return;
-        // حامل الكرة خرج بها من الملعب
-        ball.lastTouch = o; ball.owner = null; ball.shot = null;
-        px = clamp(ball.x, 0.01, L - 0.01); py = clamp(ball.y, 0.01, W - 0.01); pz = 0;
-      } else {
-        stepBall(ball, dt);
-        ball.noTouchT -= dt;
+      const px = ball.x, py = ball.y, pz = ball.z;
+      // ركلة قيد التحضير: تُضرب الكرة عند انتهاء التحضير إن كانت في متناول القدم
+      for (const p of all) {
+        if (!p.pending) continue;
+        if (ball.owner !== p) { p.pending = null; continue; }
+        p.pending.t -= dt;
+        if (p.pending.t > 0) continue;
+        const r = reachBall(p);
+        p.pending.wait += dt;
+        if (r < 1.1 || (p.pending.wait > 0.35 && r < 2.6)) p.pending.fn();
+        else if (p.pending.wait > 0.6) p.pending = null;
       }
+      const o = ball.owner;
+      if (o && o.isGK && ball.z > 0.5) {
+        // الحارس يمسك الكرة بيديه
+        ball.x = o.x + o.fx * 0.35; ball.y = o.y + o.fy * 0.35; ball.z = 1.0; ball.vx = ball.vy = ball.vz = 0;
+        return;
+      }
+      if (o) dribble(o, dt);
+      stepBall(ball, dt);
+      ball.noTouchT -= dt;
+      if (ball.owner && dist(ball.owner, ball) > 3.2) ball.owner = null; // لمسة طويلة فقد بها الكرة
 
       // هدف أو القائم أو خروج من خط المرمى
       if (ball.x < 0 || ball.x > L) {
@@ -740,12 +889,12 @@
           const ownX = t.attackRight ? 0 : L;
           if (ball.gkTried.has(g) || Math.sign(ball.vx) !== Math.sign(ownX - ball.x)) continue;
           const reach = 1.3 + g.attrs.keeping / 100 * 1.7;
-          const hd = dist(g, ball);
+          const hd = segDist(g.x, g.y, px, py, ball.x, ball.y); // المسار كله بين إطارين، لا الموضع الأخير فقط
           if (hd < reach && ball.z < 2.7) {
             ball.gkTried.add(g);
-            if (hd > 0.9 || ball.z > 1.6) { g.diveT = 0; g.diveDir = Math.sign((ball.y - g.y) * (t.attackRight ? 1 : -1)) || 1; }
+            if (hd > 0.9 || ball.z > 1.6) { g.diveT = 0; g.diveX = ball.x; g.diveY = ball.y; }
             const sp = hyp(ball.vx, ball.vy);
-            const pr = clamp(0.36 + g.attrs.keeping / 250 - (sp - 20) / 25 - (ball.shot.by.attrs.shooting - g.attrs.keeping) / 250, 0.1, 0.85);
+            const pr = clamp(0.55 + g.attrs.keeping / 220 - (sp - 22) / 30 - (ball.shot.by.attrs.shooting - g.attrs.keeping) / 300 - Math.max(0, hd - 1.2) * 0.12, 0.15, 0.9);
             if (Math.random() < pr) {
               if (ball.shot.by.isUser) stats.shotsOn++;
               if (sp < 23 && Math.random() < 0.6) { receive(g); g.holdT = rnd(0.9, 1.5); toast('تصدى الحارس', 900); }
@@ -765,16 +914,32 @@
       const sp = hyp(ball.vx, ball.vy);
       if (sp < 7 && ball.z < 0.5) ball.tried.clear(); // كرة بطيئة: يحق للجميع محاولة استلامها من جديد
       let best = null, bd = 1e9, bestHead = null, bh = 1e9;
+      const own = ball.owner;
       for (const p of all) {
+        if (own) {
+          // الكرة مع لاعب: الخصم القريب منها قد يخطفها بين لمستين
+          if (p.team === own.team || p.stealCd > 0 || ball.z > 0.8) continue;
+          if (dist(p, ball) < 0.85 && dist(p, ball) < dist(own, ball) && reachBall(own) > 0.5) {
+            p.stealCd = 0.5;
+            if (Math.random() < clamp(0.25 + (p.attrs.defending - own.attrs.dribbling) / 160, 0.08, 0.6)) {
+              if (own.isUser) stats.lost++;
+              if (p.isUser) stats.tackles++;
+              winBall(p, own);
+              return;
+            }
+          }
+          continue;
+        }
         if (p === ball.noTouch && ball.noTouchT > 0) continue;
         if (ball.tried.has(p)) continue;
-        const d = dist(p, ball);
+        const d = segDist(p.x, p.y, px, py, ball.x, ball.y);
         const gkBox = p.isGK && ax(teamOf(p), ball.x) < 17;
         if (ball.z < (gkBox ? 2.6 : 1.0)) {
           const reach = gkBox ? 1.4 : 1.0;
           if (d < reach && d < bd) { bd = d; best = p; }
         } else if (ball.z < 2.6 && d < 0.9 && d < bh) { bh = d; bestHead = p; }
       }
+      if (own) return;
       if (best) {
         let pr = 1;
         const intended = ball.pass && ball.pass.to === best;
@@ -897,7 +1062,14 @@
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       if (paused || ended) return;
+      // للاختبار فقط: تسريع المحاكاة بعدة خطوات في الإطار الواحد
+      const steps = (FC.Match.debug && FC.Match.debug.speed) || 1;
+      for (let i = 0; i < steps && !ended; i++) step(dt);
+      if (ended) return;
+      render(now, dt);
+    }
 
+    function step(dt) {
       if (phase === 'play') {
         gameSec += dt * GAME_RATE;
         if (half === 1 && gameSec >= 2700) {
@@ -928,9 +1100,11 @@
       if (phase === 'play' || phase === 'goal') physics(dt, phase === 'play');
       else {
         for (const p of all) { p.x += p.vx * dt; p.y += p.vy * dt; p.kickT += dt; p.celebT += dt; p.slideT += dt; p.diveT += dt; p.headT += dt; }
-        if (ball.owner) { ball.x = ball.owner.x + ball.owner.fx * 0.7; ball.y = ball.owner.y + ball.owner.fy * 0.7; }
+        if (ball.owner) { const [fx, fy] = footPoint(ball.owner); ball.x = fx; ball.y = fy; ball.vx = ball.vy = 0; }
       }
+    }
 
+    function render(now, dt) {
       $('m-clock').textContent = minute() + "'";
       $('m-stam').style.width = stamina + '%';
       const own = ball.owner === user;
@@ -945,6 +1119,17 @@
       }
       view.frame({ user, ball }, dt);
       drawMini();
+      // شريط قوة التسديد فوق رأس لاعبك
+      const t0 = input.held.shoot;
+      const pw = $('m-power');
+      if (t0 != null && (own || ballIncoming())) {
+        const pwr = shotPower((now - t0) / 1000);
+        const [sx, sy] = view.project(user.x, user.y, 2.3);
+        pw.hidden = false;
+        pw.style.transform = `translate(${sx - 36}px, ${sy - 30}px)`;
+        pw.firstChild.style.width = (pwr / 1.15 * 100) + '%';
+        pw.classList.toggle('over', pwr > 1);
+      } else if (!pw.hidden) pw.hidden = true;
     }
 
     // بداية المباراة

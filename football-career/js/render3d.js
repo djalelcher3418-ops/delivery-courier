@@ -41,62 +41,89 @@
     buildGoals(scene);
     buildSurroundings(scene, look);
 
-    // ---------- اللاعبون ----------
+    // ---------- اللاعبون: هيكل بمفاصل (ورك، ركبة، كاحل، كتف، مرفق، جذع، رقبة) ----------
     const geo = {
-      torso: new THREE.CapsuleGeometry(0.19, 0.4, 4, 10),
-      head: new THREE.SphereGeometry(0.13, 14, 10),
-      hair: new THREE.SphereGeometry(0.138, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.55),
-      upperArm: new THREE.CapsuleGeometry(0.065, 0.2, 3, 8),
-      foreArm: new THREE.CapsuleGeometry(0.052, 0.22, 3, 8),
-      thigh: new THREE.CapsuleGeometry(0.085, 0.26, 3, 8),
-      shin: new THREE.CapsuleGeometry(0.064, 0.34, 3, 8),
-      shoe: new THREE.BoxGeometry(0.11, 0.08, 0.26),
+      pelvis: new THREE.CylinderGeometry(0.16, 0.15, 0.24, 10),
+      torso: new THREE.CylinderGeometry(0.205, 0.15, 0.52, 10),
+      neck: new THREE.CylinderGeometry(0.05, 0.056, 0.12, 8),
+      head: new THREE.SphereGeometry(0.112, 14, 10),
+      hair: new THREE.SphereGeometry(0.118, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.5),
+      sleeve: new THREE.CylinderGeometry(0.072, 0.064, 0.16, 8),
+      upperArm: new THREE.CylinderGeometry(0.052, 0.045, 0.27, 8),
+      foreArm: new THREE.CylinderGeometry(0.045, 0.036, 0.25, 8),
+      hand: new THREE.SphereGeometry(0.046, 8, 6),
+      shortLeg: new THREE.CylinderGeometry(0.092, 0.084, 0.2, 8),
+      thigh: new THREE.CylinderGeometry(0.075, 0.055, 0.43, 8),
+      shin: new THREE.CylinderGeometry(0.056, 0.038, 0.43, 8),
+      shoe: new THREE.BoxGeometry(0.095, 0.075, 0.25),
+      number: new THREE.PlaneGeometry(0.24, 0.24),
       shadow: new THREE.PlaneGeometry(1.3, 1.3),
     };
     const shadowMat = new THREE.MeshBasicMaterial({ map: radialTexture(), transparent: true, depthWrite: false, opacity: 0.55 });
     const mat = c => new THREE.MeshLambertMaterial({ color: c });
     const skinMats = SKINS.map(mat), hairMats = HAIRS.map(mat);
     const shoeMat = mat('#1a1a1a');
+    const kitCache = new Map();
+    const kitMats = kit => {
+      const key = kit.join('|');
+      if (!kitCache.has(key)) kitCache.set(key, { shirt: mat(kit[0]), shorts: mat(kit[1]), socks: mat(kit[0]) });
+      return kitCache.get(key);
+    };
 
     function makePlayer(p, kit) {
-      const shirt = mat(kit[0]), shorts = mat(kit[1]), socks = mat(kit[0]);
+      const km = kitMats(kit);
       const skin = skinMats[(p.number * 7 + p.team * 3) % SKINS.length];
       const hair = hairMats[(p.number * 5 + p.team) % HAIRS.length];
-      const g = new THREE.Group();
-      const body = new THREE.Group(); // كل الجسم ما عدا الظل، يميل ويدور
-      g.add(body);
+      const part = (parent, g, m, x, y, z) => { const me = new THREE.Mesh(g, m); me.position.set(x, y, z); parent.add(me); return me; };
+      const joint = (parent, x, y, z) => { const j = new THREE.Group(); j.position.set(x, y, z); parent.add(j); return j; };
 
-      const torso = new THREE.Mesh(geo.torso, shirt);
-      torso.position.y = 1.27; torso.scale.set(1.15, 1, 0.72);
-      const head = new THREE.Mesh(geo.head, skin); head.position.y = 1.72;
-      const hairM = new THREE.Mesh(geo.hair, hair); hairM.position.y = 1.735; hairM.rotation.x = -0.25;
-      body.add(torso, head, hairM);
-
-      const limb = (x, y, parts) => {
-        const pivot = new THREE.Group();
-        pivot.position.set(x, y, 0);
-        for (const [gm, m, off] of parts) { const mesh = new THREE.Mesh(gm, m); mesh.position.y = off; pivot.add(mesh); }
-        body.add(pivot);
-        return pivot;
+      const root = new THREE.Group();
+      root.scale.setScalar(0.95 + ((p.number * 37 + p.team * 11) % 10) / 100);
+      const pelvis = joint(root, 0, 0.97, 0);
+      part(pelvis, geo.pelvis, km.shorts, 0, 0, 0).scale.set(1, 1, 0.72);
+      const spine = joint(pelvis, 0, 0.1, 0);
+      part(spine, geo.torso, km.shirt, 0, 0.27, 0).scale.set(1, 1, 0.66);
+      const num = part(spine, geo.number, numberMat(p.number, kit), 0, 0.32, -0.142);
+      num.rotation.y = Math.PI;
+      const neck = joint(spine, 0, 0.55, 0);
+      part(neck, geo.neck, skin, 0, 0.05, 0);
+      const head = joint(neck, 0, 0.1, 0);
+      part(head, geo.head, skin, 0, 0.1, 0).scale.set(0.9, 1.08, 1);
+      part(head, geo.hair, hair, 0, 0.12, -0.006);
+      const arm = side => {
+        const sh = joint(spine, side * 0.235, 0.48, 0);
+        part(sh, geo.sleeve, km.shirt, 0, -0.07, 0);
+        part(sh, geo.upperArm, skin, 0, -0.16, 0);
+        const el = joint(sh, 0, -0.29, 0);
+        part(el, geo.foreArm, skin, 0, -0.125, 0);
+        part(el, geo.hand, skin, 0, -0.27, 0);
+        return { sh, el };
       };
-      const armL = limb(0.27, 1.5, [[geo.upperArm, shirt, -0.12], [geo.foreArm, skin, -0.38]]);
-      const armR = limb(-0.27, 1.5, [[geo.upperArm, shirt, -0.12], [geo.foreArm, skin, -0.38]]);
-      const legParts = [[geo.thigh, shorts, -0.17], [geo.shin, socks, -0.55]];
-      const legL = limb(0.11, 0.93, legParts), legR = limb(-0.11, 0.93, legParts);
-      for (const leg of [legL, legR]) { const s = new THREE.Mesh(geo.shoe, shoeMat); s.position.set(0, -0.88, 0.05); leg.add(s); }
-      armL.rotation.z = 0.12; armR.rotation.z = -0.12;
-
+      const leg = side => {
+        const hip = joint(pelvis, side * 0.095, -0.06, 0);
+        part(hip, geo.shortLeg, km.shorts, 0, -0.09, 0);
+        part(hip, geo.thigh, skin, 0, -0.215, 0);
+        const knee = joint(hip, 0, -0.43, 0);
+        part(knee, geo.shin, km.socks, 0, -0.215, 0);
+        const ankle = joint(knee, 0, -0.43, 0);
+        part(ankle, geo.shoe, shoeMat, 0, -0.02, 0.055);
+        return { hip, knee, ankle };
+      };
       const shadow = new THREE.Mesh(geo.shadow, shadowMat);
       shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.02;
-      g.add(shadow);
-      scene.add(g);
-      return { g, body, armL, armR, legL, legR, phase: Math.random() * 6 };
+      root.add(shadow);
+      scene.add(root);
+      // L = جهة اليسار (+X في إحداثيات اللاعب)، R = اليمين
+      return {
+        root, pelvis, spine, neck, armL: arm(1), armR: arm(-1), legL: leg(1), legR: leg(-1),
+        phase: Math.random() * 6, sp: 0, prevS: 0, acc: 0, seed: Math.random() * 6,
+      };
     }
 
     const models = new Map();
     for (const t of opts.teams) {
       for (const p of t.players) {
-        const kit = p.isGK ? (t.index === 0 ? ['#2d2d2d', '#1a1a1a'] : ['#e9d238', '#1b2a33']) : t.colors;
+        const kit = p.isGK ? (t.index === 0 ? ['#2d2d2d', '#f2b134'] : ['#e9d238', '#1b2a33']) : t.colors;
         models.set(p, makePlayer(p, kit));
       }
     }
@@ -114,7 +141,7 @@
     scene.add(arrow);
 
     // الكرة: أكبر قليلاً من الحقيقة حتى تُرى على شاشة الهاتف
-    const BR = 0.2;
+    const BR = 0.17;
     const ball = new THREE.Mesh(new THREE.SphereGeometry(BR, 18, 14), new THREE.MeshLambertMaterial({ map: ballTexture() }));
     scene.add(ball);
     const ballShadow = new THREE.Mesh(geo.shadow, shadowMat);
@@ -124,60 +151,165 @@
     // ---------- الكاميرا ----------
     const cam = { x: 0, z: 0 };
     let zoom = opts.zoom || 1;
+    let vw = 1, vh = 1;
     function resize() {
-      const w = container.clientWidth, h = container.clientHeight;
-      renderer.setSize(w, h, false);
-      camera.aspect = w / Math.max(1, h);
+      vw = container.clientWidth; vh = container.clientHeight;
+      renderer.setSize(vw, vh, false);
+      camera.aspect = vw / Math.max(1, vh);
       camera.fov = camera.aspect < 1.4 ? 38 : 30;
       camera.updateProjectionMatrix();
     }
     resize();
+    const tmpV = new THREE.Vector3();
+    function project(x, y, z) {
+      tmpV.set(X(x), z, Z(y)).project(camera);
+      return [(tmpV.x + 1) / 2 * vw, (1 - tmpV.y) / 2 * vh];
+    }
 
-    function animatePlayer(p, m, dt) {
-      m.g.position.set(X(p.x), 0, Z(p.y));
-      const sp = Math.hypot(p.vx, p.vy);
-      const targetRot = Math.atan2(p.fx, p.fy);
-      let dr = targetRot - m.g.rotation.y;
-      dr = Math.atan2(Math.sin(dr), Math.cos(dr));
-      m.g.rotation.y += dr * Math.min(1, dt * 12);
+    // ---------- الحركة: دورة جري بمفاصل + حركات كرة القدم ----------
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const ease = u => u * u * (3 - 2 * u);
+    function animatePlayer(p, m, dt, time, ballPos) {
+      m.root.position.set(X(p.x), 0, Z(p.y));
+      const target = Math.atan2(p.fx, p.fy);
+      const dr = Math.atan2(Math.sin(target - m.root.rotation.y), Math.cos(target - m.root.rotation.y));
+      m.root.rotation.y += dr * Math.min(1, dt * 14);
+      const yaw = m.root.rotation.y;
+      const s = Math.hypot(p.vx, p.vy);
+      m.sp += (s - m.sp) * Math.min(1, dt * 8);
+      m.acc += ((s - m.prevS) / Math.max(dt, 1e-3) - m.acc) * Math.min(1, dt * 4);
+      m.prevS = s;
 
-      // دورة الجري: سرعة الخطوات تتبع سرعة اللاعب
-      m.phase += sp * dt * 1.9;
-      const amp = Math.min(1, sp / 7) * 0.85;
-      let legL = Math.sin(m.phase) * amp, legR = -legL;
-      let armL = -legL * 0.8, armR = -legR * 0.8;
-      let lean = Math.min(0.22, sp * 0.025), roll = 0, lift = Math.abs(Math.sin(m.phase)) * amp * 0.06;
+      // الحركة بالنسبة لاتجاه الجسم: أمام، خلف، جانب
+      const fwd = p.vx * Math.sin(yaw) + p.vy * Math.cos(yaw);
+      const lat = p.vx * Math.cos(yaw) - p.vy * Math.sin(yaw);
+      const k = clamp(m.sp / 8.5, 0, 1);
+      const mv = ease(clamp((m.sp - 0.25) / 1.2, 0, 1));
+      const back = fwd < -0.5 && -fwd > Math.abs(lat);
+      const sideStep = !back && Math.abs(lat) > Math.abs(fwd) && m.sp > 0.8;
+      const cycle = 1.2 + 0.28 * m.sp;
+      m.phase += 2 * Math.PI * m.sp / cycle * dt;
+      const ph = m.phase;
 
-      if (p.kickT < 0.32) { // ضربة الكرة بالقدم اليمنى
-        const k = Math.sin(Math.PI * p.kickT / 0.32);
-        legR = -1.35 * k + 0.3; armL = 0.6 * k; armR = -0.4 * k;
+      const A = (0.3 + 0.78 * k) * mv * (back ? 0.55 : sideStep ? 0.3 : 1);
+      const Ka = (0.45 + 1.55 * k) * mv * (back ? 0.6 : sideStep ? 0.5 : 1);
+      const dirSign = back ? -1 : 1;
+      const legPose = phi => {
+        const swing = Math.max(0, Math.cos(phi + 0.6));
+        return {
+          hx: (-Math.sin(phi) * A - 0.06 * k * mv) * dirSign,
+          hz: sideStep ? Math.sin(phi) * 0.3 * Math.sign(lat) : 0,
+          hy: 0,
+          kn: 0.1 + 0.12 * mv + Ka * Math.pow(swing, 1.3),
+          an: 0.3 * swing * k - 0.08 * mv,
+        };
+      };
+      const L = legPose(ph), R = legPose(ph + Math.PI);
+      const armAmp = (0.22 + 0.9 * k) * mv;
+      const aL = { x: Math.sin(ph) * armAmp * dirSign, z: 0.12, el: -(0.3 + 1.2 * k * mv) };
+      const aR = { x: -Math.sin(ph) * armAmp * dirSign, z: -0.12, el: -(0.3 + 1.2 * k * mv) };
+      let pelvisY = 0.97 - 0.035 * k * mv + Math.cos(2 * ph) * 0.028 * k * mv;
+      let pelvisRotY = -Math.sin(ph) * 0.14 * k * mv;
+      let pelvisRotZ = Math.sin(ph) * 0.04 * mv + clamp(-(p.turnRate || 0) * m.sp * 0.022, -0.35, 0.35);
+      let pelvisRotX = 0;
+      let spineX = 0.04 + 0.2 * k * mv + clamp(m.acc * 0.03, -0.15, 0.25) - (back ? 0.12 : 0);
+      let spineY = Math.sin(ph) * 0.2 * k * mv;
+      let neckX = 0;
+
+      // واقف: تنفّس خفيف وركبتان مرتخيتان
+      if (mv < 1) {
+        const idle = 1 - mv;
+        spineX += Math.sin(time * 2.2 + m.seed) * 0.015 * idle;
+        L.kn += 0.06 * idle; R.kn += 0.06 * idle;
       }
-      if (p.headT < 0.45) { // ضربة رأسية: قفزة
-        lift = Math.sin(Math.PI * p.headT / 0.45) * 0.45;
-        armL = armR = -1.2; lean = -0.25;
+      // الحارس في وضع الاستعداد عندما تقترب الكرة
+      if (p.isGK && p.diveT > 1.1) {
+        const near = clamp(1 - Math.hypot(ballPos.x - p.x, ballPos.y - p.y) / 30, 0, 1) * (1 - k);
+        if (near > 0) {
+          pelvisY -= 0.13 * near;
+          L.hx -= 0.4 * near; R.hx -= 0.4 * near; L.kn += 0.75 * near; R.kn += 0.75 * near; L.an -= 0.35 * near; R.an -= 0.35 * near;
+          L.hz += 0.12 * near; R.hz -= 0.12 * near;
+          spineX += 0.32 * near;
+          aL.x -= 0.5 * near; aR.x -= 0.5 * near; aL.z += 0.5 * near; aR.z -= 0.5 * near; aL.el += -0.4 * near; aR.el += -0.4 * near;
+        }
       }
-      if (p.slideT < 0.6) { // تدخل بالانزلاق
-        const k = Math.min(1, p.slideT / 0.12);
-        lean = -1.15 * k; legR = -1.4 * k; legL = -1.0 * k; lift = -0.55 * k;
+      // لمسة مراوغة: القدم تدفع الكرة
+      if (p.touchT < 0.2 && p.kickT > p.kickPrep + 0.45) {
+        const lg = p.touchN % 2 ? R : L;
+        const u = Math.sin(Math.PI * p.touchT / 0.2);
+        lg.hx -= 0.5 * u; lg.kn *= 1 - 0.5 * u;
       }
-      if (p.diveT < 0.9) { // الحارس يرتمي
-        const k = Math.sin(Math.min(1, p.diveT / 0.25) * Math.PI / 2);
-        roll = -p.diveDir * 1.35 * k; lift = 0.35 * k; armL = armR = -2.6 * k;
+      // ضربة الكرة: رجوع القدم ثم التأرجح للأمام والمتابعة
+      const kEnd = p.kickPrep + 0.45;
+      if (p.kickT < kEnd) {
+        const P = 0.55 + 0.6 * (p.kickPow || 0.6);
+        const pr = Math.max(0.05, p.kickPrep), tk = p.kickT;
+        let th, kn, w = 1;
+        if (tk < pr) { const u = ease(tk / pr); th = 0.6 * P * u; kn = 0.4 + 1.3 * u; }
+        else if (tk < pr + 0.2) { const v = (tk - pr) / 0.2, e = 1 - (1 - v) * (1 - v); th = 0.6 * P - 1.9 * P * e; kn = 1.7 * (1 - e) * (1 - e) + 0.05; }
+        else { const v = (tk - pr - 0.2) / 0.25; th = -1.3 * P * (1 - v); kn = 0.3 * (1 - v); w = 1 - ease(v); }
+        const blend = (a, b) => a + (b - a) * w;
+        R.hx = blend(R.hx, th); R.kn = blend(R.kn, kn); R.an = blend(R.an, -0.2);
+        if (p.kickKind === 'pass') R.hy = blend(0, -0.55); // باطن القدم
+        L.hx = blend(L.hx, -0.25); L.kn = blend(L.kn, 0.4);
+        aL.z = blend(aL.z, 0.3 + 0.9 * P); aL.x = blend(aL.x, -0.35); aR.x = blend(aR.x, 0.45); aR.z = blend(aR.z, -0.35);
+        const twist = tk < pr ? -0.35 * P * ease(tk / pr) : 0.3 * P;
+        spineY = blend(spineY, twist);
+        if (p.kickKind === 'loft') spineX = blend(spineX, -0.2);
+        if (p.kickKind === 'shot') spineX = blend(spineX, 0.22);
       }
-      if (p.celebT < 2.4) { // احتفال بالهدف: الذراعان للأعلى
-        armL = armR = -2.7; lift = Math.abs(Math.sin(p.celebT * 9)) * 0.25;
+      // ضربة رأسية: قفزة وإيماءة بالرأس
+      if (p.headT < 0.55) {
+        const u = p.headT / 0.55, j = Math.sin(Math.PI * u);
+        pelvisY += j * 0.45;
+        L.kn += 0.9 * j; R.kn += 0.9 * j; L.hx -= 0.4 * j; R.hx -= 0.4 * j;
+        aL.x = -0.9 * j; aR.x = -0.9 * j; aL.z = 0.7 * j; aR.z = -0.7 * j;
+        spineX = -0.35 + 0.8 * u; neckX = 0.3 * j;
       }
-      m.legL.rotation.x = legL; m.legR.rotation.x = legR;
-      m.armL.rotation.x = armL; m.armR.rotation.x = armR;
-      m.body.rotation.x = lean;
-      m.body.rotation.z = roll;
-      m.body.position.y = lift;
+      // تدخل بالانزلاق: يجلس على الأرض وساق ممدودة
+      if (p.slideT < 0.75) {
+        const w = Math.min(1, p.slideT / 0.12) * (p.slideT > 0.55 ? (0.75 - p.slideT) / 0.2 : 1);
+        const bl = (a, b) => a + (b - a) * w;
+        pelvisY = bl(pelvisY, 0.3); spineX = bl(spineX, -0.95); pelvisRotZ = bl(pelvisRotZ, 0.2);
+        R.hx = bl(R.hx, -1.45); R.kn = bl(R.kn, 0.05); L.hx = bl(L.hx, -0.55); L.kn = bl(L.kn, 1.7);
+        aL.x = bl(aL.x, 0.7); aR.x = bl(aR.x, 0.7); aL.el = bl(aL.el, -0.2); aR.el = bl(aR.el, -0.2);
+      }
+      // الحارس يرتمي نحو الكرة
+      if (p.diveT < 1.1) {
+        const dx = p.diveX - p.x, dy = p.diveY - p.y;
+        const side = Math.sign(dx * Math.cos(yaw) - dy * Math.sin(yaw)) || 1;
+        const w = Math.sin(Math.min(1, p.diveT / 0.22) * Math.PI / 2) * (p.diveT > 0.8 ? (1.1 - p.diveT) / 0.3 : 1);
+        const bl = (a, b) => a + (b - a) * w;
+        pelvisRotZ = bl(pelvisRotZ, -side * 1.45); pelvisY = bl(pelvisY, 0.6);
+        aL.x = bl(aL.x, -2.9); aR.x = bl(aR.x, -2.9); aL.el = bl(aL.el, -0.1); aR.el = bl(aR.el, -0.1);
+        L.kn = bl(L.kn, 0.15); R.kn = bl(R.kn, 0.3); L.hx = bl(L.hx, 0); R.hx = bl(R.hx, 0.2);
+        spineX = bl(spineX, 0);
+      }
+      // احتفال بالهدف: الذراعان مفتوحتان مثل الطائرة
+      if (p.celebT < 2.4) {
+        aL.x = 0; aR.x = 0; aL.z = 1.45; aR.z = -1.45; aL.el = -0.1; aR.el = -0.1;
+        pelvisRotZ += Math.sin(p.celebT * 3) * 0.25;
+      }
+      if (p.stunT > 0) { spineX += 0.25; aL.z += 0.4; aR.z -= 0.4; }
+
+      neckX += -spineX * 0.6;
+      m.pelvis.position.y = pelvisY;
+      m.pelvis.rotation.set(pelvisRotX, pelvisRotY, pelvisRotZ);
+      m.spine.rotation.set(spineX, spineY, 0);
+      m.neck.rotation.x = neckX;
+      for (const [lg, ps] of [[m.legL, L], [m.legR, R]]) {
+        lg.hip.rotation.set(ps.hx, ps.hy, ps.hz);
+        lg.knee.rotation.x = ps.kn;
+        lg.ankle.rotation.x = ps.an;
+      }
+      m.armL.sh.rotation.set(aL.x, 0, aL.z); m.armL.el.rotation.x = aL.el;
+      m.armR.sh.rotation.set(aR.x, 0, aR.z); m.armR.el.rotation.x = aR.el;
     }
 
     let t = 0;
     function frame(state, dt) {
       t += dt;
-      for (const [p, m] of models) animatePlayer(p, m, dt);
+      for (const [p, m] of models) animatePlayer(p, m, dt, t, state.ball);
       const u = state.user;
       ring.position.x = callRing.position.x = X(u.x);
       ring.position.z = callRing.position.z = Z(u.y);
@@ -198,13 +330,13 @@
       ballShadow.scale.set(ss, ss, ss);
 
       // كاميرا البث: تتبع لاعبك والكرة، من جانب الملعب
-      const tx = X(u.x * 0.55 + b.x * 0.45), tz = Z(u.y * 0.5 + b.y * 0.5);
+      const tx = X(u.x * 0.75 + b.x * 0.25), tz = Z(u.y * 0.8 + b.y * 0.2); // الكاميرا تتمحور حول لاعبك
       cam.x += (tx - cam.x) * Math.min(1, dt * 2.2);
       cam.z += (tz - cam.z) * Math.min(1, dt * 1.6);
       const cx = Math.max(-L / 2 + 8, Math.min(L / 2 - 8, cam.x));
       const dist = 30 * zoom;
       camera.position.set(cx, dist * 0.5, cam.z * 0.6 + dist);
-      camera.lookAt(cx, 0, cam.z * 0.9 - 1);
+      camera.lookAt(cx, 0, cam.z * 0.9 + 2.5 * zoom); // اللاعب أعلى قليلاً من منتصف الشاشة، بعيداً عن الأزرار
       renderer.render(scene, camera);
     }
 
@@ -217,7 +349,7 @@
       renderer.domElement.remove();
     }
 
-    return { frame, resize, dispose, setZoom(z) { zoom = z; } };
+    return { frame, resize, dispose, project, setZoom(z) { zoom = z; } };
   }
 
   // ---------- بناء الملعب ----------
@@ -367,6 +499,21 @@
   }
 
   // ---------- قوام مرسومة بالكود ----------
+  const numCache = new Map();
+  function numberMat(n, kit) {
+    const key = n + '|' + kit[1];
+    if (numCache.has(key)) return numCache.get(key);
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d');
+    g.fillStyle = kit[1];
+    g.font = '700 46px "Readex Pro", Tahoma, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(String(n), 32, 36);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.MeshLambertMaterial({ map: t, transparent: true, depthWrite: false });
+    numCache.set(key, m);
+    return m;
+  }
+
   function radialTexture() {
     const c = document.createElement('canvas'); c.width = c.height = 64;
     const g = c.getContext('2d');
